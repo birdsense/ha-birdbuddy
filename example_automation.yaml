@@ -1,0 +1,16 @@
+# Example automation for Bird Buddy feed items
+
+automation:
+  - alias: "Bird Buddy - New Feed Item"
+    description: "Responds to new Bird Buddy feed items"
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    action:
+      - service: notify.notify
+        data:
+          message: "New Bird Buddy feed item: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
+      - service: logbook.log
+        data:
+          name: "Bird Buddy Feed"
+          message: "Item {{ trigger.event.data.item_id }}: {{ trigger.event.data.type }} at {{ trigger.event.data.created_at }}"

@@ -1,41 +1,47 @@
-# Bird Buddy Home Assistant Integration
+# Bird Buddy Home Assistant Integration (Feed-Only Version)
 
-Custom integration for [Bird Buddy](https://mybirdbuddy.com/).
+**This is a stripped-down version of the original Bird Buddy integration that focuses solely on feed monitoring and event triggering.**
 
-This component makes use of the [pybirdbuddy](https://github.com/jhansche/pybirdbuddy) library
-for API calls, also available on [PyPI](https://pypi.org/project/pybirdbuddy/).
+## 🔥 Key Features
 
-**Prior To Installation**
+- ✅ **Feed monitoring**: Fetches Bird Buddy feed every 10 minutes
+- ✅ **Duplicate prevention**: Persistent storage prevents processing the same items twice
+- ✅ **Event triggering**: Fires `birdbuddy_new_feed_item` events for new feed items
+- ✅ **Minimal footprint**: No sensors, devices, or complex entities
+- ✅ **Reliable**: Avoids postcard processing issues that affect the full integration
 
-You will need your Bird Buddy `email` and `password`.
+## 🎯 What This Version Does
 
-> **Note**
->
-> If your BirdBuddy account was created using SSO (Google, Facebook, etc), those methods will
-> not work currently. To work around that, you can sign up a new account using email and password,
-> and then invite that new account as a member of your main/owner account. Be aware that certain
-> information or functionality may not be available to member accounts (for example, "off-grid"
-> settings and firmware version).
->
-> Alternatively, you may reset the Bird Buddy unit and re-pair it with a new account that was created
-> with a password. See [Bird Buddy support](https://support.mybirdbuddy.com/hc/en-us/articles/9764938883089-Connecting-Bird-Buddy-to-a-different-Wi-Fi-network)
-> for more information.
+This stripped integration focuses on one thing: **getting feed data and triggering events**. 
+
+When a new item appears in your Bird Buddy feed, it fires a Home Assistant event containing:
+- Item ID and type (e.g., `FeedItemNewPostcard`, `FeedItemCollectedPostcard`)
+- Creation timestamp
+- Complete feed item data (including media URLs, species info, etc.)
+
+You can then use these events in automations to:
+- Send notifications
+- Download images/videos
+- Trigger other integrations
+- Process data however you want
+
+## 🚫 What This Version Doesn't Do
+
+- ❌ No sensor entities (battery, signal, etc.)
+- ❌ No device entities or controls
+- ❌ No media browser integration
+- ❌ No postcard collection services
+- ❌ No firmware update handling
 
 ## Installation
 
 ### With HACS
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-
-1. Open HACS Settings and add this repository (https://github.com/jhansche/ha-birdbuddy/)
-   as a Custom Repository (use **Integration** as the category).
-2. The `Bird Buddy` page should automatically load (or find it in the HACS Store)
+1. Open HACS Settings and add this repository as a Custom Repository
+2. Use **Integration** as the category
 3. Click `Install`
-4. Continue to [Setup](README.md#Setup)
-
-Alternatively, click on the button below to add the repository:
-
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?category=Integration&repository=ha-birdbuddy&owner=jhansche)
+4. Restart Home Assistant
+5. Continue to Setup
 
 ### Manual
 
@@ -44,149 +50,138 @@ and place inside your Home Assistant Core installation's `custom_components` dir
 
 ## Setup
 
-1. Install this integration.
-2. Navigate to the Home Assistant Integrations page (Settings --> Devices & Services)
-3. Click the `+ Add Integration` button in the bottom-right
+1. Install this integration
+2. Navigate to **Settings** → **Devices & Services**
+3. Click **+ Add Integration**
 4. Search for `Bird Buddy`
+5. Enter your Bird Buddy email and password
+6. The integration will start monitoring your feed immediately
 
-Alternatively, click on the button below to add the integration:
+> **Note**: If your BirdBuddy account was created using SSO (Google, Facebook, etc), you'll need to create a password-based account or use the member account workaround described in the original documentation.
 
-[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=birdbuddy)
+## Events
 
-# Devices
+### `birdbuddy_new_feed_item`
 
-A device is created for each Bird Buddy feeder associated with the account. See below for the entities available.
+This event is fired for **every new feed item**, regardless of type.
 
-# Entities
+**Event Data Structure:**
+```json
+{
+  "item_id": "7f9e310f-53ce-4f94-ab6b-460c5c93d78f",
+  "item_data": { /* complete feed item data */ },
+  "created_at": "2026-01-24T07:27:38.416Z",
+  "type": "FeedItemNewPostcard"
+}
+```
 
-| Entity           | Entity Type     | Notes                                                                                                                                           |
-|------------------|-----------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
-| `Audio`          | `switch`        | Whether recorded visitor videos will include audio.                                                                                             |
-| `Battery`        | `sensor`        | Current Bird Buddy battery percentage                                                                                                           |
-| `Charging`       | `binary_sensor` | Whether the Bird Buddy is currently charging                                                                                                    |
-| `Off-Grid`       | `switch`        | Present and toggle Off-Grid status (owners only)                                                                                                |
-| `Power Profile`  | `select`        | Choose between Power Profile settings. NOTE: `FRENZY_MODE` appears to be a paid feature requiring an active payment subscription.               |
-| `Recent Visitor` | `sensor`        | State represents the most recent visitor's bird species name, and the `entity_picture` points to the cover media of that recent postcard visit. |
-| `State`          | `sensor`        | Current state (ready, offline, etc)                                                                                                             |
-| `Signal`         | `sensor`        | Current wifi signal (RSSI)                                                                                                                      |
-| `Update`         | `update`        | Show and install Firmware updates (owners only)                                                                                                 |
+**Common Item Types:**
+- `FeedItemNewPostcard`: New postcard waiting to be processed
+- `FeedItemCollectedPostcard`: Postcard that has been collected
+- `FeedItemFeederInvitationAccepted`: Feeder invitation accepted
+- `FeedItemSpeciesUnlocked`: New species unlocked
 
-Some entities are disabled or hidden by default, if they represent an advanced use case (for example,
-the "Signal" and "Recent Visitor" entities). There are also some entities that are disabled by
-default because the support is not yet enabled by the Bird Buddy API (for example, the Temperature
-and Food Level sensors are not yet enabled by Bird Buddy).
+## Example Automations
 
-More entities may be added in the future.
-
-# Media
-
-Bird species and sightings that have _already been collected_ from postcards can be viewed in the
-Home Assistant Media Browser. To collect a postcard you will need to use the mobile app to open the
-postcards as they arrive. Only opened postcards can be viewed in the Media Browser (same as the
-Collections tab in the Bird Buddy app).
-
-# Events
-
-### `birdbuddy_new_postcard_sighting`
-
-This event is fired when a new postcard is detected in the feed.
-
-| Field      | Description                                                                                                          |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- |
-| `postcard` | The `FeedNode` data for the `FeedItemNewPostcard` type.                                                              |
-| `sighting` | The `PostcardSighting` data, containing information about the sighting, potential species info, and images captured. |
-
-Some interesting fields from `sighting` include:
-
-- `sighting.medias[].contentUrl`, `.thumbnailUrl` - time-sensitive URLs that can be used to download the associated sighting image(s)
-- `sighting.sightingReport.sightings[]` - list of sightings grouped together in the postcard
-  - The data here depends on the type of sighting (i.e., `SightingRecognizedBird`, `SightingCantDecideWhichBird`, etc)
-  - Possible fields include `.suggestions` if the bird is not recognized, or `.species` for confidently recognized birds
-- `sighting.feeder.id` - not generally useful as is, but can be used to filter automations to those matching the specified Feeder.
-  This filter is applied automatically with the Device Trigger.
-
-This event data can also be passed through as-is to the [`birdbuddy.collect_postcard`](#birdbuddycollect_postcard) service.
-
-This event can also be added in an automation using the "A new postcard is ready" Device Trigger:
+### Basic Notification
 
 ```yaml
-trigger:
-  - platform: device
-    domain: birdbuddy
-    type: new_postcard
-    device_id: <ha device id>
-    feeder_id: <bird buddy feeder id>
+automation:
+  - alias: "Bird Buddy - New Feed Item"
+    description: "Notifies when new Bird Buddy feed item is detected"
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    action:
+      - service: notify.notify
+        data:
+          message: "New Bird Buddy feed item: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
+          title: "Bird Buddy Feed Update"
+      - service: logbook.log
+        data:
+          name: "Bird Buddy Feed"
+          message: "Item {{ trigger.event.data.item_id }}: {{ trigger.event.data.type }} at {{ trigger.event.data.created_at }}"
 ```
 
-# Services
-
-### `birdbuddy.collect_postcard`
-
-"Finishes" a postcard sighting by adding the media to the associated species collections, thus making them available in the [Media Browser](#media).
-This is the same effect as opening and saving the postcard in the Bird Buddy app.
-
-> **Note**
->
-> This service _is not_ intended to be invoked manually, but should be used in conjunction with the
-> [`birdbuddy_new_postcard_sighting`](#birdbuddy_new_postcard_sighting) event, device trigger, or [Blueprint](#blueprint).
->
-> Attempting to call the service manually will likely fail, because the service requires the `postcard` and `sighting` data that would be included
-> in the event.
-
-| Service attribute data  | Optional | Description                                                                                |
-| ----------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `postcard`              | No       | Postcard data from `birdbuddy_new_postcard_sighting` event                                 |
-| `sighting`              | No       | Sighting data from `birdbuddy_new_postcard_sighting` event                                 |
-| `strategy`              | Yes      | Strategy for resolving the sighting (see strategies below, default: `recognized`)          |
-| `best_guess_confidence` | Yes      | Minimum confidence to support `"best_guess"` strategy (default: 10%)                       |
-| `share_media`           | Yes      | Whether the saved media will also be shared with the community (default: false)            |
-
-Postcard sighting strategies:
-
-- `recognized` (Default): collect the postcard only if Bird Buddy's AI identified a bird species. Note: the identified species may be incorrect.
-  Also note that any sighting not recognized by the Bird Buddy API will be *discarded*.
-- `best_guess`: In the "can't decide which bird" sightings, a list of possible species is usually included. This strategy will behave like
-  `recognized`, but if the species is not recognized it will select the highest-confidence species automatically (assuming that confidence is
-  at least `best_guess_confidence`, defaults to 10%). If none of the suggestions meet the `best_guess_confidence` strategy, the sighting will be
-  *discarded*.
-- `mystery`: Same behavior as `best_guess`, but if the bird is not recognized and no species meets the confidence threshold, collect the sighting
-  as a "Mystery Visitor".
-
-#### Automation example
+### Download New Postcard Images
 
 ```yaml
-trigger:
-  - platform: event
-    event_type: birdbuddy_new_postcard_sighting
-  # OR a device trigger:
-  - platform: device
-    domain: birdbuddy
-    type: new_postcard
-    # $ids...
-action:
-  - service: birdbuddy.collect_postcard
-    data:
-      strategy: best_guess
-      # pass-through these 2 event fields as they are
-      postcard: "{{ trigger.event.data.postcard }}"
-      sighting: "{{ trigger.event.data.sighting }}"
+automation:
+  - alias: "Bird Buddy - Download Postcard Images"
+    description: "Downloads images from new postcards"
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    condition:
+      - condition: template
+        value_template: "{{ trigger.event.data.type == 'FeedItemNewPostcard' }}"
+    action:
+      - service: downloader.download_file
+        data:
+          url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
+          filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+          overwrite: true
 ```
 
-#### Blueprint
+### Process Specific Bird Types
 
-To simplify the combination of the trigger and the action of collecting the postcard, you can import a predefined
-[Blueprint](https://www.home-assistant.io/docs/automation/using_blueprints/).
-
-To add the Blueprint, use the button below:
-
-[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fjhansche%2Fha-birdbuddy%2Fblob%2Fmain%2Fcustom_components%2Fbirdbuddy%2Fblueprints%2Fcollect_postcard.yaml)
-
-or go to **Settings** > **Automations & Scenes** > **Blueprints**, click the **Import Blueprint** button, and enter this URL:
-
+```yaml
+automation:
+  - alias: "Bird Buddy - Special Bird Detected"
+    description: "Special handling for specific bird species"
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    condition:
+      - condition: template
+        value_template: >-
+          {{ trigger.event.data.type == 'FeedItemCollectedPostcard' 
+             and 'Great Tit' in (trigger.event.data.item_data.species | map(attribute='name') | list) }}
+    action:
+      - service: notify.mobile_app
+        data:
+          message: "Great Tit detected! Check your Bird Buddy app."
+          title: "Special Bird Alert"
 ```
-https://github.com/jhansche/ha-birdbuddy/blob/main/custom_components/birdbuddy/blueprints/collect_postcard.yaml
-```
 
-After the Blueprint has been imported, you still need to
-[create an automation from that Blueprint](https://www.home-assistant.io/docs/automation/using_blueprints/#blueprint-automations). Also note that
-if we update the Blueprint here, your imported Blueprint will not automatically receive the update, and you may need to re-import it to get the update.
+## Feed Storage & Deduplication
+
+The integration maintains a persistent list of processed item IDs in your Home Assistant configuration. This ensures:
+
+- No duplicate events for the same feed item
+- Survives Home Assistant restarts
+- Handles connection issues gracefully
+- Prevents event flooding during reconnections
+
+## Troubleshooting
+
+**No events being triggered?**
+1. Check the Home Assistant logs for any errors
+2. Verify your Bird Buddy credentials are correct
+3. Ensure you have recent activity in your Bird Buddy feed
+4. Check that the integration is running (look for it in Settings → Devices & Services)
+
+**Events stopped working after restart?**
+The integration maintains feed state across restarts, so you shouldn't see duplicate events. If no new events appear, check if there are actually new items in your Bird Buddy feed.
+
+## Difference from Original Integration
+
+| Feature | Original Integration | This Feed-Only Version |
+|---------|---------------------|------------------------|
+| Feed Monitoring | ✅ | ✅ |
+| Event Triggering | ✅ (postcard only) | ✅ (all feed items) |
+| Sensor Entities | ✅ | ❌ |
+| Device Controls | ✅ | ❌ |
+| Media Browser | ✅ | ❌ |
+| Postcard Services | ✅ | ❌ |
+| Complexity | High | Low |
+| Failure Points | Many | Minimal |
+
+## Contributing
+
+This is a simplified fork focused on reliability. For feature requests or issues related to the full Bird Buddy integration, please refer to the original repository.
+
+---
+
+**Original integration**: [jhansche/ha-birdbuddy](https://github.com/jhansche/ha-birdbuddy)  
+**Library**: [pybirdbuddy](https://github.com/jhansche/pybirdbuddy)
