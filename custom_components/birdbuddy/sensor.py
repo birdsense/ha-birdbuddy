@@ -1,282 +1,96 @@
-"""Bird Buddy sensors"""
+"""Sensors for Bird Buddy feed-only integration."""
 
 from __future__ import annotations
-from collections.abc import Mapping
+
+from datetime import datetime
 from typing import Any
 
-from birdbuddy.birds import Species
-from birdbuddy.feed import FeedNodeType
-from birdbuddy.media import Media, is_media_expired
-from birdbuddy.sightings import PostcardSighting
-
-from homeassistant.components.sensor import (
-    RestoreSensor,
-    SensorDeviceClass,
-    SensorEntity,
-    SensorStateClass,
-)
-
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    PERCENTAGE,
-    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-    UnitOfTemperature,
-)
-from homeassistant.helpers.entity import EntityCategory
-from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.const import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, EVENT_NEW_POSTCARD_SIGHTING, LOGGER
+from .const import DOMAIN, SENSOR_FEED_STATUS, SENSOR_LAST_SYNC
 from .coordinator import BirdBuddyDataUpdateCoordinator
-from .entity import BirdBuddyMixin
-from .device import BirdBuddyDevice
-from .util import _find_media_with_species
-from .visitors import RecentVisitors
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities,
 ) -> None:
-    """Set up entities from a config entry."""
+    """Set up sensors from a config entry."""
     coordinator: BirdBuddyDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-    feeders = coordinator.feeders.values()
-    async_add_entities(BirdBuddyBatteryEntity(f, coordinator) for f in feeders)
-    async_add_entities(BirdBuddySignalEntity(f, coordinator) for f in feeders)
-    async_add_entities(BirdBuddyStateEntity(f, coordinator) for f in feeders)
-    async_add_entities(BirdBuddyRecentVisitorEntity(f, coordinator) for f in feeders)
-    # Incubating: Food level always reports LOW
-    async_add_entities(BirdBuddyFoodStateEntity(f, coordinator) for f in feeders)
-    # Incubating: Temperature always reports 0
-    async_add_entities(BirdBuddyTemperatureEntity(f, coordinator) for f in feeders)
+    
+    async_add_entities([
+        BirdBuddyFeedStatusSensor(coordinator, entry),
+        BirdBuddyLastSyncSensor(coordinator, entry),
+    ])
 
 
-class BirdBuddyBatteryEntity(BirdBuddyMixin, SensorEntity):
-    """Representation of a Bird Buddy battery."""
+class BirdBuddyFeedStatusSensor(SensorEntity, CoordinatorEntity):
+    """Sensor showing Bird Buddy feed status."""
 
-    _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = PERCENTAGE
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_has_entity_name = True
-    _attr_name = "Battery"
+    _attr_translation_key = "feed_status"
 
-    def __init__(
-        self,
-        feeder: BirdBuddyDevice,
-        coordinator: BirdBuddyDataUpdateCoordinator,
-    ) -> None:
-        super().__init__(feeder, coordinator)
-        self._attr_unique_id = f"{self.feeder.id}-battery"
-
-    @property
-    def native_value(self) -> int:
-        """Return the state of the sensor."""
-        return self.feeder.battery.percentage
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any]:
-        return {"level": self.feeder.battery.state.value}
-
-
-class BirdBuddySignalEntity(BirdBuddyMixin, SensorEntity):
-    """Bird Buddy wifi signal strength."""
-
-    _attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False
-    _attr_has_entity_name = True
-    _attr_name = "Signal Strength"
-
-    def __init__(
-        self,
-        feeder: BirdBuddyDevice,
-        coordinator: BirdBuddyDataUpdateCoordinator,
-    ) -> None:
-        super().__init__(feeder, coordinator)
-        self._attr_unique_id = f"{self.feeder.id}-signal"
-
-    @property
-    def native_value(self) -> int:
-        """Return the state of the sensor."""
-        return self.feeder.signal.rssi
-
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any]:
-        return {"level": self.feeder.signal.state.value}
-
-
-class BirdBuddyRecentVisitorEntity(BirdBuddyMixin, RestoreSensor):
-    """Bird Buddy recent visitors"""
-
-    _attr_entity_registry_enabled_default = False
-    _attr_has_entity_name = True
-    _attr_icon = "mdi:bird"
-    _attr_name = "Recent Visitor"
-    _attr_extra_state_attributes = {}
-
-    _latest_media: Media | None = None
-
-    def __init__(
-        self,
-        feeder: BirdBuddyDevice,
-        coordinator: BirdBuddyDataUpdateCoordinator,
-    ) -> None:
-        super().__init__(feeder, coordinator)
-        self._attr_unique_id = f"{self.feeder.id}-recent-visitor"
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            self.coordinator.add_visitor_listener(
-                self.feeder,
-                self._on_recent_visitor,
-            )
+    def __init__(self, coordinator: BirdBuddyDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        """Initialize feed status sensor."""
+        super().__init__(coordinator)
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_{SENSOR_FEED_STATUS}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Bird Buddy Feed",
+            manufacturer="Bird Buddy, Inc.",
         )
 
     @property
-    def entity_picture(self) -> str | None:
-        if picture := super().entity_picture:
-            if not is_media_expired(picture):
-                return picture
-            self._attr_entity_picture = None
-
-        # FIXME: no good way to refresh if the picture url is expired
-
-        if self._latest_media:
-            picture = self._latest_media.content_url or self._latest_media.thumbnail_url
-            if not is_media_expired(picture):
-                return picture
-            self._latest_media = None
-
-        return None
-
-    @property
     def native_value(self) -> str:
-        if attr := super().native_value:
-            # Postcard listener set the attribute directly, use it
-            return attr
+        """Return feed status."""
+        if self.coordinator.last_update_success:
+            processed_count = len(self.coordinator._get_processed_item_ids())
+            return f"OK ({processed_count} items processed)"
+        return "Error"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes."""
+        return {
+            "last_update": self.coordinator.data.last_refresh if self.coordinator.data else None,
+            "total_items_processed": len(self.coordinator._get_processed_item_ids()),
+            "update_interval_minutes": 10,
+        }
+
+
+class BirdBuddyLastSyncSensor(SensorEntity, CoordinatorEntity):
+    """Sensor showing last sync timestamp."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "last_sync"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: BirdBuddyDataUpdateCoordinator, entry: ConfigEntry) -> None:
+        """Initialize last sync sensor."""
+        super().__init__(coordinator)
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{entry.entry_id}_{SENSOR_LAST_SYNC}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Bird Buddy Feed",
+            manufacturer="Bird Buddy, Inc.",
+        )
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return last successful sync timestamp."""
+        if self.coordinator.last_update_success and self.coordinator.data:
+            return self.coordinator.data.last_refresh
         return None
 
-    @callback
-    def _on_recent_visitor(self, visitors: RecentVisitors) -> None:
-        media = visitors.latest_media
-        species = visitors.latest_species
-        if media:
-            self._latest_media = media
-            self._attr_entity_picture = media.content_url
-        if species:
-            self._attr_native_value = species.name
-        self.async_write_ha_state()
-
-
-class BirdBuddyStateEntity(BirdBuddyMixin, SensorEntity):
-    """Bird Buddy Feeder state."""
-
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_has_entity_name = True
-    _attr_icon = "mdi:bird"
-    _attr_name = "Feeder State"
-    _attr_options = [
-        # See birdbuddy/feeder.py, FeederState enum values
-        "deep_sleep",
-        "factory_reset",
-        "firmware_update",
-        "offline",
-        "off_grid",
-        "online",
-        "out_of_feeder",
-        "pending_factory_reset",
-        "pending_removal",
-        "ready_to_stream",
-        "streaming",
-        "taking_postcards",
-        # anything unexpected
-        "unknown",
-    ]
-    _attr_translation_key = "feeder_state"
-
-    def __init__(
-        self,
-        feeder: BirdBuddyDevice,
-        coordinator: BirdBuddyDataUpdateCoordinator,
-    ) -> None:
-        super().__init__(feeder, coordinator)
-        self._attr_unique_id = f"{self.feeder.id}-state"
-
     @property
-    def native_value(self) -> int:
-        """Return the state of the sensor."""
-        return self.feeder.state.value.lower()
-
-
-class BirdBuddyTemperatureEntity(BirdBuddyMixin, SensorEntity):
-    """Bird Buddy feeder temperature"""
-
-    _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_entity_registry_enabled_default = False  # Incubating
-    _attr_entity_category = EntityCategory.DIAGNOSTIC  # Incubating
-    _attr_has_entity_name = True
-    _attr_name = "Temperature"
-    # TODO: remove once it is verified working
-    _attr_attribution = "(This entity is incubating)"
-    # FIXME: value is always 0, cannot tell unit
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-
-    def __init__(
-        self,
-        feeder: BirdBuddyDevice,
-        coordinator: BirdBuddyDataUpdateCoordinator,
-    ) -> None:
-        super().__init__(feeder, coordinator)
-        self._attr_unique_id = f"{self.feeder.id}-temperature"
-
-    @property
-    def native_value(self) -> int:
-        """Temperature reported by the feeder"""
-        return self.feeder.temperature
-
-    async def add_to_platform_finish(self) -> None:
-        await super().add_to_platform_finish()
-        if self.enabled:
-            LOGGER.warning("Bird Buddy Temperature entity is incubating")
-
-
-class BirdBuddyFoodStateEntity(BirdBuddyMixin, SensorEntity):
-    """Bird Buddy Food/Seed level."""
-
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_entity_registry_enabled_default = False  # Incubating
-    _attr_has_entity_name = True
-    _attr_icon = "mdi:food-turkey"
-    _attr_name = "Food Level"
-    _attr_translation_key = "metric_state"
-    _attr_options = [
-        "low",
-        "medium",
-        "high",
-    ]
-    # TODO: remove once it is verified working
-    _attr_attribution = "(This entity is incubating)"
-
-    def __init__(
-        self,
-        feeder: BirdBuddyDevice,
-        coordinator: BirdBuddyDataUpdateCoordinator,
-    ) -> None:
-        super().__init__(feeder, coordinator)
-        self._attr_unique_id = f"{self.feeder.id}-food-state"
-
-    @property
-    def native_value(self) -> int:
-        """Return the state of the sensor."""
-        return self.feeder.food.value.lower()
-
-    async def add_to_platform_finish(self) -> None:
-        await super().add_to_platform_finish()
-        if self.enabled:
-            LOGGER.warning("Bird Buddy Food Level entity is incubating")
+    def available(self) -> bool:
+        """Return if sensor is available."""
+        return self.coordinator.last_update_success and self.coordinator.data is not None

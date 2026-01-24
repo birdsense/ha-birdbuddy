@@ -15,3 +15,10 @@ EVENT_NEW_FEED_ITEM = f"{DOMAIN}_new_feed_item"
 
 # Config entry keys
 CONF_LAST_FEED_ITEM_IDS = "last_feed_item_ids"
+
+# Sensor types
+SENSOR_FEED_STATUS = "feed_status"
+SENSOR_LAST_SYNC = "last_sync"
+
+# Binary sensor types
+BINARY_SENSOR_CONNECTION = "connection"

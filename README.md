@@ -7,7 +7,7 @@
 - ✅ **Feed monitoring**: Fetches Bird Buddy feed every 10 minutes
 - ✅ **Duplicate prevention**: Persistent storage prevents processing the same items twice
 - ✅ **Event triggering**: Fires `birdbuddy_new_feed_item` events for new feed items
-- ✅ **Minimal footprint**: No sensors, devices, or complex entities
+- ✅ **Minimal footprint**: Basic status entities only, no complex device management
 - ✅ **Reliable**: Avoids postcard processing issues that affect the full integration
 
 ## 🎯 What This Version Does
@@ -27,11 +27,11 @@ You can then use these events in automations to:
 
 ## 🚫 What This Version Doesn't Do
 
-- ❌ No sensor entities (battery, signal, etc.)
-- ❌ No device entities or controls
-- ❌ No media browser integration
+- ❌ No device entities or controls (no feeder management)
+- ❌ No media browser integration  
 - ❌ No postcard collection services
 - ❌ No firmware update handling
+- ❌ No battery/signal/full device sensors (only basic feed status)
 
 ## Installation
 
@@ -59,6 +59,29 @@ and place inside your Home Assistant Core installation's `custom_components` dir
 
 > **Note**: If your BirdBuddy account was created using SSO (Google, Facebook, etc), you'll need to create a password-based account or use the member account workaround described in the original documentation.
 
+## Basic Status Entities
+
+The integration provides 3 minimal entities to monitor status:
+
+### **Feed Status** Sensor
+- Shows "OK (X items processed)" or "Error"
+- Attributes: last update time, total processed items, update interval
+- Entity ID: `sensor.bird_buddy_feed_feed_status`
+
+### **Last Sync** Sensor  
+- Timestamp of last successful feed synchronization
+- Device Class: Timestamp (can be used directly in automations)
+- Entity ID: `sensor.bird_buddy_feed_last_sync`
+
+### **Connection** Binary Sensor
+- Shows online/offline status of the integration
+- Device Class: Connectivity
+- Entity ID: `binary_sensor.bird_buddy_feed_connection`
+
+These entities provide quick verification that the integration is working and processing feed data correctly.
+
+**Note**: The integration does NOT collect or process postcards - it only monitors the feed for new items and triggers events. All postcard processing must be handled manually through the Bird Buddy app or custom automations using the event data.
+
 ## Events
 
 ### `birdbuddy_new_feed_item`
@@ -76,10 +99,12 @@ This event is fired for **every new feed item**, regardless of type.
 ```
 
 **Common Item Types:**
-- `FeedItemNewPostcard`: New postcard waiting to be processed
-- `FeedItemCollectedPostcard`: Postcard that has been collected
+- `FeedItemNewPostcard`: New postcard detected (contains unprocessed images/species data)
+- `FeedItemCollectedPostcard`: Postcard already processed/collected in Bird Buddy app
 - `FeedItemFeederInvitationAccepted`: Feeder invitation accepted
 - `FeedItemSpeciesUnlocked`: New species unlocked
+
+**Important**: This integration does NOT process or collect postcards - it only monitors when they appear in the feed. Use the event data (media URLs, species info, etc.) in your automations to handle postcard content as needed.
 
 ## Example Automations
 
@@ -170,7 +195,7 @@ The integration maintains feed state across restarts, so you shouldn't see dupli
 |---------|---------------------|------------------------|
 | Feed Monitoring | ✅ | ✅ |
 | Event Triggering | ✅ (postcard only) | ✅ (all feed items) |
-| Sensor Entities | ✅ | ❌ |
+| Sensor Entities | ✅ (full device sensors) | ✅ (basic status only) |
 | Device Controls | ✅ | ❌ |
 | Media Browser | ✅ | ❌ |
 | Postcard Services | ✅ | ❌ |

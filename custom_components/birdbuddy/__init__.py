@@ -5,7 +5,7 @@ from __future__ import annotations
 from birdbuddy.client import BirdBuddy
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
+from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
@@ -16,7 +16,11 @@ from .const import (
 )
 from .coordinator import BirdBuddyDataUpdateCoordinator
 
-# No platforms needed for feed-only integration
+# Minimal platforms for feed-only integration
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -41,7 +45,10 @@ async def async_setup_entry(
     hass.data[DOMAIN][entry.entry_id] = coordinator
     await coordinator.async_config_entry_first_refresh()
 
-    # No platforms to set up
+    await hass.config_entries.async_forward_entry_setups(
+        entry,
+        PLATFORMS,
+    )
 
     return True
 
@@ -51,9 +58,10 @@ async def async_unload_entry(
     entry: ConfigEntry,
 ) -> bool:
     """Unload a config entry."""
-    # No platforms to unload
-    unload_ok = True
-    if unload_ok:
+    if unload_ok := await hass.config_entries.async_unload_platforms(
+        entry,
+        PLATFORMS,
+    ):
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
