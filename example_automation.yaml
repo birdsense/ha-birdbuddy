@@ -38,10 +38,15 @@ automation:
           overwrite: true
           
 
-# Simple notification with image URL
+# Option 1: Basic notification with URL in message
       - service: notify.notify
         data:
-          message: "New Bird Buddy image: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
+          message: "New Bird Buddy image: {{ trigger.event.data.item_id }} - {{ trigger.event.data.item_data.medias[0].contentUrl }}"
           title: "Bird Buddy Feed Update"
-          data:
-            image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"  # Direct URL
+
+# Option 2: Try image key (may not work with all apps)
+      - service: notify.notify
+        data:
+          message: "New Bird Buddy image: {{ trigger.event.data.item_id }}"
+          title: "Bird Buddy Feed Update"
+          image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"  # Direct URL

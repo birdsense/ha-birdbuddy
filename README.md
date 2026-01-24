@@ -152,11 +152,12 @@ automation:
           image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
 ```
 
-This automation:
-- Triggers on new postcard items (both new and collected)
-- Extracts the image URL directly from the feed event data
-- Sends a notification with the image embedded (no download required)
-- Works with all notification apps that support image URLs
+This automation provides two options:
+
+**Option 1**: URL in notification message (always works)
+**Option 2**: Image key in data (may not work with all apps)
+
+Some notification apps reject custom data keys like `image`. Option 1 puts the URL directly in the message text, which works with all apps. Option 2 tries the `image` key but may fail on some platforms.
 
 ### Process Feed Images Automatically
 
