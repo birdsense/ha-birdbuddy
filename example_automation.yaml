@@ -3,6 +3,7 @@
 automation:
   - alias: "Bird Buddy - New Feed Item"
     description: "Responds to new Bird Buddy feed items"
+    mode: parallel  # Prevents "Already running" for multiple feed items
     trigger:
       - platform: event
         event_type: birdbuddy_new_feed_item
@@ -10,7 +11,33 @@ automation:
       - service: notify.notify
         data:
           message: "New Bird Buddy feed item: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
+          title: "Bird Buddy Feed Update"
       - service: logbook.log
         data:
           name: "Bird Buddy Feed"
           message: "Item {{ trigger.event.data.item_id }}: {{ trigger.event.data.type }} at {{ trigger.event.data.created_at }}"
+  # Download and process images
+  - alias: "Bird Buddy - Process Feed Images"
+    description: "Downloads and processes images from new feed items"
+    mode: parallel
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    condition:
+      - condition: template
+        value_template: >-
+          {{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] 
+             and trigger.event.data.item_data.medias is defined 
+             and trigger.event.data.item_data.medias | length > 0 }}
+    action:
+      - service: downloader.download_file
+        data:
+          url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
+          filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+          overwrite: true
+      - service: notify.notify
+        data:
+          message: "Bird Buddy image downloaded: {{ trigger.event.data.item_id }}"
+          title: "Bird Buddy Image"
+          data:
+            image: "/local/birdbuddy/{{ trigger.event.data.item_id }}.jpg"

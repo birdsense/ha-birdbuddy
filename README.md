@@ -104,7 +104,7 @@ This event is fired for **every new feed item**, regardless of type.
 - `FeedItemFeederInvitationAccepted`: Feeder invitation accepted
 - `FeedItemSpeciesUnlocked`: New species unlocked
 
-**Important**: This integration does NOT process or collect postcards - it only monitors when they appear in the feed. Use the event data (media URLs, species info, etc.) in your automations to handle postcard content as needed.
+**Important**: This integration does NOT process or collect postcards - it only monitors when they appear in the feed and provides event data. Use the included automations to automatically download images and handle feed content.
 
 ## Example Automations
 
@@ -128,24 +128,54 @@ automation:
           message: "Item {{ trigger.event.data.item_id }}: {{ trigger.event.data.type }} at {{ trigger.event.data.created_at }}"
 ```
 
-### Download New Postcard Images
+### Download Feed Item Images
 
 ```yaml
 automation:
-  - alias: "Bird Buddy - Download Postcard Images"
-    description: "Downloads images from new postcards"
+  - alias: "Bird Buddy - Download Feed Images"
+    description: "Downloads images from new feed items"
     trigger:
       - platform: event
         event_type: birdbuddy_new_feed_item
     condition:
       - condition: template
-        value_template: "{{ trigger.event.data.type == 'FeedItemNewPostcard' }}"
+        value_template: "{{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] }}"
     action:
       - service: downloader.download_file
         data:
           url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
           filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
           overwrite: true
+```
+
+### Process Feed Images Automatically
+
+```yaml
+automation:
+  - alias: "Bird Buddy - Process Feed Images"
+    description: "Downloads and processes images from new feed items"
+    mode: parallel
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    condition:
+      - condition: template
+        value_template: >-
+          {{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] 
+             and trigger.event.data.item_data.medias is defined 
+             and trigger.event.data.item_data.medias | length > 0 }}
+    action:
+      - service: downloader.download_file
+        data:
+          url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
+          filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+          overwrite: true
+      - service: notify.notify
+        data:
+          message: "Bird Buddy image downloaded: {{ trigger.event.data.item_id }}"
+          title: "Bird Buddy Image"
+          data:
+            image: "/local/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
 ```
 
 ### Process Specific Bird Types
