@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from birdbuddy.client import BirdBuddy
 from birdbuddy.feed import FeedNode
 from homeassistant.config_entries import ConfigEntry
@@ -29,6 +31,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         """Initialize the BirdBuddy data coordinator."""
         self.client = client
         self.first_update = True
+        self.last_update_timestamp = None
         super().__init__(
             hass,
             LOGGER,
@@ -101,6 +104,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 await self._process_feed(feed)
             else:
                 LOGGER.info("First update completed - next update will process feed items")
+            
+            # Update timestamp for successful operations
+            self.last_update_timestamp = datetime.now()
         except Exception as exc:
             LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
             raise UpdateFailed(f"Error fetching feed: {exc}") from exc

@@ -59,7 +59,7 @@ class BirdBuddyFeedStatusSensor(SensorEntity, CoordinatorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes."""
         return {
-            "last_update": self.coordinator.data.last_refresh if self.coordinator.data else None,
+            "last_update": self.coordinator.last_update_success,
             "total_items_processed": len(self.coordinator._get_processed_item_ids()),
             "update_interval_minutes": 10,
         }
@@ -86,8 +86,8 @@ class BirdBuddyLastSyncSensor(SensorEntity, CoordinatorEntity):
     @property
     def native_value(self) -> datetime | None:
         """Return last successful sync timestamp."""
-        if self.coordinator.last_update_success and self.coordinator.data:
-            return self.coordinator.data.last_refresh
+        if self.coordinator.last_update_success:
+            return self.coordinator.last_update_timestamp
         return None
 
     @property
