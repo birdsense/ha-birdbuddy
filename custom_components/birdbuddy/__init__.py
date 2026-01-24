@@ -6,13 +6,15 @@ from birdbuddy.client import BirdBuddy
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+import voluptuous as vol
 
 from .const import (
     DOMAIN,
     LOGGER,
+    CONF_RESET_FEED_STORAGE,
 )
 from .coordinator import BirdBuddyDataUpdateCoordinator
 
@@ -71,5 +73,18 @@ async def async_unload_entry(
 
 
 def _setup_services(hass: HomeAssistant) -> bool:
-    """No services needed for feed-only integration"""
+    """Register services for feed-only integration"""
+    
+    async def handle_reset_feed_storage(service: ServiceCall) -> None:
+        """Reset feed storage to process all items again."""
+        for coordinator in hass.data[DOMAIN].values():
+            coordinator._reset_feed_storage()
+        LOGGER.info("Feed storage reset - all items will be processed again")
+
+    hass.services.async_register(
+        DOMAIN,
+        "reset_feed_storage",
+        handle_reset_feed_storage,
+        schema=vol.Schema({}),
+    )
     return True

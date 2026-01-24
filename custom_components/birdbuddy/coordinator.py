@@ -54,12 +54,14 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     async def _process_feed(self, feed: list[FeedNode]) -> None:
         """Process new feed items and emit events."""
         if not feed:
+            LOGGER.info("No feed items found")
             return
 
-        LOGGER.debug("Found %d feed items", len(feed))
+        LOGGER.info("Processing %d feed items", len(feed))
         
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
+        LOGGER.info("Already processed %d items", len(processed_ids))
         new_ids = set()
 
         for item in feed:
@@ -90,6 +92,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         # Save all item IDs we've now seen
         all_seen_ids = processed_ids.union(new_ids)
         self._save_processed_item_ids(all_seen_ids)
+        LOGGER.info("Processed %d new items, %d total items tracked", 
+                   len(new_ids - processed_ids), len(all_seen_ids))
 
     async def _async_update_data(self) -> BirdBuddy:
         """Fetch latest feed data."""
@@ -102,6 +106,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             # no automations listening.
             if not self.first_update:
                 feed = await self.client.refresh_feed()
+                LOGGER.info("Feed fetched: %d items", len(feed) if feed else 0)
                 await self._process_feed(feed)
             else:
                 LOGGER.info("First update completed - next update will process feed items")
@@ -114,3 +119,15 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
         self.first_update = False
         return self.client
+
+    def _reset_feed_storage(self) -> None:
+        """Reset the feed storage to process all items again."""
+        # Clear stored item IDs
+        new_data = dict(self.config_entry.data)
+        new_data[CONF_LAST_FEED_ITEM_IDS] = []
+        self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+        
+        # Reset first_update to trigger processing on next update
+        self.first_update = True
+        
+        LOGGER.info("Feed storage reset - all items will be processed as new")

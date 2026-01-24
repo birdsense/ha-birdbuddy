@@ -15,6 +15,7 @@ EVENT_NEW_FEED_ITEM = f"{DOMAIN}_new_feed_item"
 
 # Config entry keys
 CONF_LAST_FEED_ITEM_IDS = "last_feed_item_ids"
+CONF_RESET_FEED_STORAGE = "reset_feed_storage"
 
 # Sensor types
 SENSOR_FEED_STATUS = "feed_status"
