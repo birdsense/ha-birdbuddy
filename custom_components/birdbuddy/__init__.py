@@ -87,4 +87,17 @@ def _setup_services(hass: HomeAssistant) -> bool:
         handle_reset_feed_storage,
         schema=vol.Schema({}),
     )
+    
+    async def handle_refresh_feed(service: ServiceCall) -> None:
+        """Manually trigger feed refresh."""
+        for coordinator in hass.data[DOMAIN].values():
+            await coordinator.force_refresh_now()
+        LOGGER.info("Manual feed refresh triggered")
+
+    hass.services.async_register(
+        DOMAIN,
+        "refresh_feed",
+        handle_refresh_feed,
+        schema=vol.Schema({}),
+    )
     return True

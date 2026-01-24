@@ -107,6 +107,15 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if not self.first_update:
                 feed = await self.client.refresh_feed()
                 LOGGER.info("Feed fetched: %d items", len(feed) if feed else 0)
+                
+                # Debug: log all feed items
+                if feed:
+                    for i, item in enumerate(feed):
+                        LOGGER.info("Feed item %d: ID=%s, Type=%s, Created=%s", 
+                                   i+1, item.get("id"), item.get("__typename"), item.get("createdAt"))
+                else:
+                    LOGGER.warning("No feed items returned from Bird Buddy API")
+                
                 await self._process_feed(feed)
             else:
                 LOGGER.info("First update completed - next update will process feed items")
@@ -131,3 +140,24 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         self.first_update = True
         
         LOGGER.info("Feed storage reset - all items will be processed as new")
+
+    async def force_refresh_now(self) -> None:
+        """Force immediate feed refresh and processing."""
+        LOGGER.info("Force refresh triggered - processing feed immediately")
+        try:
+            await self.client.refresh()
+            feed = await self.client.refresh_feed()
+            LOGGER.info("Force refresh fetched: %d items", len(feed) if feed else 0)
+            
+            if feed:
+                for i, item in enumerate(feed):
+                    LOGGER.info("Force refresh item %d: ID=%s, Type=%s, Created=%s", 
+                                       i+1, item.get("id"), item.get("__typename"), item.get("createdAt"))
+            
+            # Process feed regardless of first_update flag
+            await self._process_feed(feed)
+            
+            # Update timestamp
+            self.last_update_timestamp = dt_util.now()
+        except Exception as exc:
+            LOGGER.error("Force refresh failed: %s", exc)
