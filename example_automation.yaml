@@ -35,9 +35,41 @@ automation:
           url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
           filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
           overwrite: true
+      # Option 1: Notify with local downloaded image
       - service: notify.notify
         data:
           message: "Bird Buddy image downloaded: {{ trigger.event.data.item_id }}"
           title: "Bird Buddy Image"
           data:
             image: "/local/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+            
+# Option 2: Notify with direct image URL (no download needed)
+      - service: notify.notify
+        data:
+          message: "New Bird Buddy image: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
+          title: "Bird Buddy Feed Update"
+          data:
+            image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
+            url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
+            
+# Option 3: Both - download and notify with URL
+      - service: notify.notify
+        data:
+          message: "Bird Buddy image processed: {{ trigger.event.data.item_id }}"
+          title: "Bird Buddy - Image Processed"
+          data:
+            image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
+            attachment:
+              content-type: image/jpeg
+              url: "/local/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+
+# ====== NOTIFICATION OPTIONS =========
+# Choose ONE of the options above:
+# Option 1: Downloads image first, then notifies with local path
+# Option 2: Direct notification with original image URL (no download)  
+# Option 3: Both - downloads AND shows original URL
+
+# Note: Different notification apps support different formats:
+# - Most apps support direct URL in image field
+# - Some apps need the attachment approach
+# - Local path requires serving /config/www/ via web server
