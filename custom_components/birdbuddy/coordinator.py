@@ -8,6 +8,7 @@ from birdbuddy.client import BirdBuddy
 from birdbuddy.feed import FeedNode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import EventOrigin, HomeAssistant
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -106,7 +107,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 LOGGER.info("First update completed - next update will process feed items")
             
             # Update timestamp for successful operations
-            self.last_update_timestamp = datetime.now()
+            self.last_update_timestamp = dt_util.now()
         except Exception as exc:
             LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
             raise UpdateFailed(f"Error fetching feed: {exc}") from exc

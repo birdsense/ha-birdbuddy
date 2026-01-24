@@ -30,7 +30,7 @@ class BirdBuddyConnectionSensor(BinarySensorEntity, CoordinatorEntity):
     """Binary sensor showing Bird Buddy connection status."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "connection"
+    _attr_name = "Connection"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -38,9 +38,10 @@ class BirdBuddyConnectionSensor(BinarySensorEntity, CoordinatorEntity):
         """Initialize connection sensor."""
         super().__init__(coordinator)
         self.coordinator = coordinator
-        self._attr_unique_id = f"{entry.entry_id}_{BINARY_SENSOR_CONNECTION}"
+        self.entry_id = entry.entry_id or "birdbuddy"
+        self._attr_unique_id = f"{self.entry_id}_{BINARY_SENSOR_CONNECTION}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
+            identifiers={(DOMAIN, self.entry_id)},
             name="Bird Buddy Feed",
             manufacturer="Bird Buddy, Inc.",
         )

@@ -34,15 +34,16 @@ class BirdBuddyFeedStatusSensor(SensorEntity, CoordinatorEntity):
     """Sensor showing Bird Buddy feed status."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "feed_status"
+    _attr_name = "Feed Status"
 
     def __init__(self, coordinator: BirdBuddyDataUpdateCoordinator, entry: ConfigEntry) -> None:
         """Initialize feed status sensor."""
         super().__init__(coordinator)
         self.coordinator = coordinator
-        self._attr_unique_id = f"{entry.entry_id}_{SENSOR_FEED_STATUS}"
+        self.entry_id = entry.entry_id or "birdbuddy"
+        self._attr_unique_id = f"{self.entry_id}_{SENSOR_FEED_STATUS}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
+            identifiers={(DOMAIN, self.entry_id)},
             name="Bird Buddy Feed",
             manufacturer="Bird Buddy, Inc.",
         )
@@ -69,16 +70,17 @@ class BirdBuddyLastSyncSensor(SensorEntity, CoordinatorEntity):
     """Sensor showing last sync timestamp."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "last_sync"
+    _attr_name = "Last Sync"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
 
     def __init__(self, coordinator: BirdBuddyDataUpdateCoordinator, entry: ConfigEntry) -> None:
         """Initialize last sync sensor."""
         super().__init__(coordinator)
         self.coordinator = coordinator
-        self._attr_unique_id = f"{entry.entry_id}_{SENSOR_LAST_SYNC}"
+        self.entry_id = entry.entry_id or "birdbuddy"
+        self._attr_unique_id = f"{self.entry_id}_{SENSOR_LAST_SYNC}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
+            identifiers={(DOMAIN, self.entry_id)},
             name="Bird Buddy Feed",
             manufacturer="Bird Buddy, Inc.",
         )
