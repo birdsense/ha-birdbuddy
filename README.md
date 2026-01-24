@@ -128,25 +128,35 @@ automation:
           message: "Item {{ trigger.event.data.item_id }}: {{ trigger.event.data.type }} at {{ trigger.event.data.created_at }}"
 ```
 
-### Download Feed Item Images
+### Process Feed Item Images
 
 ```yaml
 automation:
-  - alias: "Bird Buddy - Download Feed Images"
-    description: "Downloads images from new feed items"
+  - alias: "Bird Buddy - New Feed Item"
+    description: "Notifies with direct image URL from feed items"
+    mode: parallel  # Prevents "Already running" for multiple events
     trigger:
       - platform: event
         event_type: birdbuddy_new_feed_item
     condition:
       - condition: template
-        value_template: "{{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] }}"
+        value_template: >-
+          {{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] 
+             and trigger.event.data.item_data.medias is defined 
+             and trigger.event.data.item_data.medias | length > 0 }}
     action:
-      - service: downloader.download_file
+      - service: notify.notify
         data:
-          url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
-          filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
-          overwrite: true
+          message: "New Bird Buddy image: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
+          title: "Bird Buddy Feed Update"
+          image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
 ```
+
+This automation:
+- Triggers on new postcard items (both new and collected)
+- Extracts the image URL directly from the feed event data
+- Sends a notification with the image embedded (no download required)
+- Works with all notification apps that support image URLs
 
 ### Process Feed Images Automatically
 
