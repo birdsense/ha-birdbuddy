@@ -28,6 +28,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     ) -> None:
         """Initialize the BirdBuddy data coordinator."""
         self.client = client
+        self.first_update = True
         super().__init__(
             hass,
             LOGGER,
@@ -90,9 +91,19 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         """Fetch latest feed data."""
         try:
             await self.client.refresh()
-            feed = await self.client.refresh_feed()
-            await self._process_feed(feed)
+
+            # Skip processing the Feed on the first update. This works around a minor issue
+            # where the `automation` integration is not loaded yet by the time we make our first
+            # update call. If we proceed, we might emit feed items while there are
+            # no automations listening.
+            if not self.first_update:
+                feed = await self.client.refresh_feed()
+                await self._process_feed(feed)
+            else:
+                LOGGER.info("First update completed - next update will process feed items")
         except Exception as exc:
+            LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
             raise UpdateFailed(f"Error fetching feed: {exc}") from exc
 
+        self.first_update = False
         return self.client
