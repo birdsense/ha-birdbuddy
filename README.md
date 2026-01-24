@@ -154,6 +154,8 @@ automation:
 
 This automation provides two options:
 
+**Important**: Copy this exactly from `example_automation.yaml` - the indentation and formatting must match exactly. Manual copying may introduce indentation errors.
+
 **Option 1**: URL in notification message (always works)
 **Option 2**: Image key in data (may not work with all apps)
 
