@@ -94,7 +94,14 @@ def _setup_services(hass: HomeAssistant) -> bool:
     async def handle_refresh_feed(service: ServiceCall) -> None:
         """Manually trigger feed refresh."""
         LOGGER.info("Manual refresh feed service called")
-        for coordinator in hass.data[DOMAIN].values():
+        coordinators = list(hass.data[DOMAIN].values())
+        LOGGER.info("Found %d coordinators in hass.data[%s]", len(coordinators), DOMAIN)
+        
+        if not coordinators:
+            LOGGER.error("No Bird Buddy coordinators found! Is the integration properly configured?")
+            return
+            
+        for coordinator in coordinators:
             await coordinator.force_refresh_now()
         LOGGER.info("Manual feed refresh triggered")
 
