@@ -108,7 +108,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 if item_id in new_postcard_ids:
                     LOGGER.warning("Fetching sighting for truly new postcard: %s", item_id)
                     try:
-                        sighting = await self.client.sighting_from_postcard(item_id)
+                        # Pass the FeedNode object instead of just the ID
+                        sighting = await self.client.sighting_from_postcard(item)
+                        LOGGER.warning("Sighting result for %s: %s", item_id, sighting)
                         if sighting:
                             # Extract media info from sighting
                             medias = []
@@ -233,29 +235,45 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
-            # Get truly uncollected postcards (these work with sighting_from_postcard)
+            # Get truly uncollected postcards - process these directly!
             new_postcards = await self.client.new_postcards()
+            LOGGER.warning("Found %d new postcards from new_postcards()", len(new_postcards))
+
+            # Log detailed info about each new postcard
+            for pc in new_postcards:
+                pc_id = pc.get("id") if hasattr(pc, 'get') else "unknown"
+                pc_data = dict(pc.data) if hasattr(pc, 'data') else {}
+                LOGGER.warning("New postcard %s - all data keys: %s", pc_id, list(pc_data.keys()))
+                LOGGER.warning("New postcard %s - full data: %s", pc_id, pc_data)
+
+            # Process new_postcards directly (they are the source of truth)
             new_postcard_ids = set()
+            new_postcard_map = {}
             for pc in new_postcards:
                 pc_id = pc.get("id") if hasattr(pc, 'get') else None
                 if pc_id:
                     new_postcard_ids.add(pc_id)
-            LOGGER.warning("Found %d truly new postcards: %s", len(new_postcard_ids), list(new_postcard_ids))
+                    new_postcard_map[pc_id] = pc  # Keep reference to FeedNode
 
-            # Use refresh_feed with explicit timestamp to get all recent items
+            # Also get refresh_feed for collected postcards (these have media)
             since_time = datetime.now(timezone.utc) - timedelta(hours=24)
             feed = await self.client.refresh_feed(since=since_time)
-            LOGGER.warning("Force refresh fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
+            LOGGER.warning("refresh_feed returned: %d items", len(feed) if feed else 0)
 
-            # Log each item for debugging
+            # Combine: use new_postcards as primary, add any collected from feed
+            combined_feed = list(new_postcards)  # Start with new postcards
+            feed_ids = set(pc.get("id") if hasattr(pc, 'get') else None for pc in new_postcards)
+
+            # Add items from refresh_feed that aren't already included
             if feed:
                 for item in feed:
-                    item_id = item.get("id") if hasattr(item, 'get') else "unknown"
-                    item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
-                    is_truly_new = item_id in new_postcard_ids
-                    LOGGER.warning("Feed item: %s (%s) - truly_new: %s", item_id, item_type, is_truly_new)
+                    item_id = item.get("id") if hasattr(item, 'get') else None
+                    if item_id and item_id not in feed_ids:
+                        combined_feed.append(item)
+                        feed_ids.add(item_id)
 
-            await self._process_feed(feed, new_postcard_ids)
+            LOGGER.warning("Combined feed: %d total items", len(combined_feed))
+            await self._process_feed(combined_feed, new_postcard_ids)
 
             # Update timestamp
             self.last_update_timestamp = dt_util.now()
