@@ -45,7 +45,9 @@ async def async_setup_entry(
     coordinator = BirdBuddyDataUpdateCoordinator(hass, client, entry)
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
+    LOGGER.info("Setting up Bird Buddy coordinator for user: %s", entry.data[CONF_EMAIL])
     await coordinator.async_config_entry_first_refresh()
+    LOGGER.info("Bird Buddy coordinator setup completed")
 
     await hass.config_entries.async_forward_entry_setups(
         entry,

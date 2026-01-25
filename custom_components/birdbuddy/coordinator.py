@@ -116,6 +116,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
     async def _async_update_data(self) -> BirdBuddy:
         """Fetch latest feed data."""
+        LOGGER.info("Bird Buddy coordinator update started")
         try:
             await self.client.refresh()
 
