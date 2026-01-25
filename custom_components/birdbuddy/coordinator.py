@@ -199,6 +199,19 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         LOGGER.warning("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
+
+            # Also try new_postcards() to see if recent items appear there
+            try:
+                new_postcards = await self.client.new_postcards()
+                LOGGER.warning("new_postcards() returned: %d items", len(new_postcards) if new_postcards else 0)
+                if new_postcards:
+                    for i, pc in enumerate(new_postcards):
+                        pc_id = pc.get("id") if hasattr(pc, 'get') else "unknown"
+                        pc_created = pc.get("createdAt") if hasattr(pc, 'get') else "unknown"
+                        LOGGER.warning("NewPostcard %d: ID=%s, Created=%s", i+1, pc_id, pc_created)
+            except Exception as exc:
+                LOGGER.warning("new_postcards() failed: %s", exc)
+
             # Fetch more items (50 instead of default 20) to ensure we get recent ones
             feed_response = await self.client.feed(first=50)
             feed = list(feed_response.nodes) if feed_response else []
