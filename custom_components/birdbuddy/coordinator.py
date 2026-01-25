@@ -120,23 +120,13 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
-            # Always process the feed using feed() to get ALL items without internal cache
+            # Fetch feed items using feed() - get 50 items to ensure recent ones are included
             # feed() returns a Feed object, we need to access .nodes to get the list
-            feed_response = await self.client.feed()
+            feed_response = await self.client.feed(first=50)
             feed = list(feed_response.nodes) if feed_response else []
-            LOGGER.info("Feed fetched: %d items", len(feed))
-            
-            # Debug: log all feed items
-            if feed:
-                for i, item in enumerate(feed):
-                    if isinstance(item, str):
-                        LOGGER.info("Feed item %d: ID=%s, Type=string", i+1, item)
-                    else:
-                        LOGGER.info("Feed item %d: ID=%s, Type=%s, Created=%s", 
-                                   i+1, item.get("id") if hasattr(item, 'get') else "unknown", 
-                                   item.get("__typename") if hasattr(item, 'get') else "unknown", 
-                                   item.get("createdAt") if hasattr(item, 'get') else "unknown")
-            else:
+            LOGGER.warning("Feed fetched: %d items", len(feed))
+
+            if not feed:
                 LOGGER.warning("No feed items returned from Bird Buddy API")
             
             await self._process_feed(feed)
@@ -162,19 +152,26 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         LOGGER.warning("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
-            feed_response = await self.client.feed()
+            # Fetch more items (50 instead of default 20) to ensure we get recent ones
+            feed_response = await self.client.feed(first=50)
             feed = list(feed_response.nodes) if feed_response else []
             LOGGER.warning("Force refresh fetched: %d items", len(feed))
-            
+
             if feed:
                 for i, item in enumerate(feed):
                     if isinstance(item, str):
-                        LOGGER.info("Force refresh item %d: ID=%s, Type=string", i+1, item)
+                        LOGGER.warning("Item %d: ID=%s, Type=string", i+1, item)
                     else:
-                        LOGGER.info("Force refresh item %d: ID=%s, Type=%s, Created=%s", 
-                                           i+1, item.get("id") if hasattr(item, 'get') else "unknown", 
-                                           item.get("__typename") if hasattr(item, 'get') else "unknown", 
-                                           item.get("createdAt") if hasattr(item, 'get') else "unknown")
+                        item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
+                        item_id = item.get("id") if hasattr(item, 'get') else "unknown"
+                        created = item.get("createdAt") if hasattr(item, 'get') else "unknown"
+                        # Check for medias in item data
+                        has_medias = False
+                        if hasattr(item, 'data') and item.data:
+                            medias = item.data.get("medias", [])
+                            has_medias = len(medias) > 0 if medias else False
+                        LOGGER.warning("Item %d: ID=%s, Type=%s, Created=%s, HasMedias=%s",
+                                       i+1, item_id, item_type, created, has_medias)
             
             await self._process_feed(feed)
             
