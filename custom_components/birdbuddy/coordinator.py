@@ -53,14 +53,14 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     async def _process_feed(self, feed: list) -> None:
         """Process new feed items and emit events."""
         if not feed:
-            LOGGER.warning("No feed items found")
+            LOGGER.debug("No feed items found")
             return
 
-        LOGGER.warning("Processing %d feed items", len(feed))
+        LOGGER.debug("Processing %d feed items", len(feed))
 
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
-        LOGGER.warning("Already processed %d items", len(processed_ids))
+        LOGGER.debug("Already processed %d items", len(processed_ids))
         new_ids = set()
 
         for item in feed:
@@ -86,7 +86,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if item_id in processed_ids:
                 continue
 
-            LOGGER.warning("New feed item: %s (type: %s)", item_id, item_type)
+            LOGGER.info("New feed item: %s (type: %s)", item_id, item_type)
 
             # For NewPostcard items without media, fetch the full sighting data
             # Only try for recent postcards (< 2 hours old) to avoid API errors
@@ -98,12 +98,11 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                     created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                     age = datetime.now(timezone.utc) - created_dt
                     is_recent = age < timedelta(hours=2)
-                    LOGGER.warning("Postcard age: %s, is_recent: %s", age, is_recent)
                 except (ValueError, TypeError):
                     is_recent = False
 
             if item_type == "FeedItemNewPostcard" and not has_medias and is_recent:
-                LOGGER.warning("Fetching sighting data for recent postcard: %s", item_id)
+                LOGGER.info("Fetching sighting data for recent postcard: %s", item_id)
                 try:
                     sighting = await self.client.sighting_from_postcard(item_id)
                     if sighting:
@@ -118,7 +117,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                             })
                         if medias:
                             item_data["medias"] = medias
-                            LOGGER.warning("Added %d medias from sighting", len(medias))
+                            LOGGER.info("Added %d medias from sighting", len(medias))
 
                         # Also add species info from sighting report if available
                         if sighting.report:
@@ -134,7 +133,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                 if species_list:
                                     item_data["species"] = species_list
                 except Exception as exc:
-                    LOGGER.warning("Failed to fetch sighting for %s: %s", item_id, exc)
+                    LOGGER.debug("Failed to fetch sighting for %s: %s", item_id, exc)
 
             # Fire event with complete feed item data
             event_data = {
@@ -143,7 +142,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 "created_at": created_at,
                 "type": item_type,
             }
-            LOGGER.warning("Firing event %s with data: %s", EVENT_NEW_FEED_ITEM, event_data)
+            LOGGER.info("Firing event %s for item %s", EVENT_NEW_FEED_ITEM, item_id)
 
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
@@ -155,11 +154,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         all_seen_ids = processed_ids.union(new_ids)
         self._save_processed_item_ids(all_seen_ids)
         new_items_count = len(new_ids - processed_ids)
-        LOGGER.warning("Processed %d new items, %d total items tracked",
-                       new_items_count, len(all_seen_ids))
-
-        if new_items_count == 0:
-            LOGGER.warning("No new feed items found to emit events for")
+        if new_items_count > 0:
+            LOGGER.info("Processed %d new feed items", new_items_count)
 
     async def _async_update_data(self) -> BirdBuddy:
         """Fetch latest feed data."""
@@ -167,17 +163,17 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
-            # Fetch feed items using feed() - get 50 items to ensure recent ones are included
-            # feed() returns a Feed object, we need to access .nodes to get the list
-            feed_response = await self.client.feed(first=50)
-            feed = list(feed_response.nodes) if feed_response else []
-            LOGGER.warning("Feed fetched: %d items", len(feed))
+            # Use refresh_feed with explicit timestamp to get recent items
+            # The regular feed() method doesn't return the newest postcards
+            since_time = datetime.now(timezone.utc) - timedelta(hours=24)
+            feed = await self.client.refresh_feed(since=since_time)
+            LOGGER.info("Feed fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
 
             if not feed:
-                LOGGER.warning("No feed items returned from Bird Buddy API")
-            
+                LOGGER.info("No new feed items since last check")
+
             await self._process_feed(feed)
-            
+
             # Update timestamp for successful operations
             self.last_update_timestamp = dt_util.now()
         except Exception as exc:
@@ -196,60 +192,17 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
     async def force_refresh_now(self) -> None:
         """Force immediate feed refresh and processing."""
-        LOGGER.warning("Force refresh triggered - processing feed immediately")
+        LOGGER.info("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
 
-            # Try refresh_feed with a recent timestamp to bypass caching
-            try:
-                since_time = datetime.now(timezone.utc) - timedelta(hours=24)
-                LOGGER.warning("Trying refresh_feed(since=%s)", since_time.isoformat())
-                recent_feed = await self.client.refresh_feed(since=since_time)
-                LOGGER.warning("refresh_feed(since=24h ago) returned: %d items", len(recent_feed) if recent_feed else 0)
-                if recent_feed:
-                    for i, item in enumerate(recent_feed):
-                        item_id = item.get("id") if hasattr(item, 'get') else "unknown"
-                        item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
-                        item_created = item.get("createdAt") if hasattr(item, 'get') else "unknown"
-                        LOGGER.warning("RecentFeed %d: ID=%s, Type=%s, Created=%s", i+1, item_id, item_type, item_created)
-            except Exception as exc:
-                LOGGER.warning("refresh_feed(since=...) failed: %s", exc)
+            # Use refresh_feed with explicit timestamp to get recent items
+            since_time = datetime.now(timezone.utc) - timedelta(hours=24)
+            feed = await self.client.refresh_feed(since=since_time)
+            LOGGER.info("Force refresh fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
 
-            # Also try new_postcards() to see if recent items appear there
-            try:
-                new_postcards = await self.client.new_postcards()
-                LOGGER.warning("new_postcards() returned: %d items", len(new_postcards) if new_postcards else 0)
-                if new_postcards:
-                    for i, pc in enumerate(new_postcards):
-                        pc_id = pc.get("id") if hasattr(pc, 'get') else "unknown"
-                        pc_created = pc.get("createdAt") if hasattr(pc, 'get') else "unknown"
-                        LOGGER.warning("NewPostcard %d: ID=%s, Created=%s", i+1, pc_id, pc_created)
-            except Exception as exc:
-                LOGGER.warning("new_postcards() failed: %s", exc)
-
-            # Fetch more items (50 instead of default 20) to ensure we get recent ones
-            feed_response = await self.client.feed(first=50)
-            feed = list(feed_response.nodes) if feed_response else []
-            LOGGER.warning("Force refresh fetched: %d items", len(feed))
-
-            if feed:
-                for i, item in enumerate(feed):
-                    if isinstance(item, str):
-                        LOGGER.warning("Item %d: ID=%s, Type=string", i+1, item)
-                    else:
-                        item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
-                        item_id = item.get("id") if hasattr(item, 'get') else "unknown"
-                        created = item.get("createdAt") if hasattr(item, 'get') else "unknown"
-                        # Check for medias in item data
-                        has_medias = False
-                        if hasattr(item, 'data') and item.data:
-                            medias = item.data.get("medias", [])
-                            has_medias = len(medias) > 0 if medias else False
-                        LOGGER.warning("Item %d: ID=%s, Type=%s, Created=%s, HasMedias=%s",
-                                       i+1, item_id, item_type, created, has_medias)
-            
             await self._process_feed(feed)
-            
+
             # Update timestamp
             self.last_update_timestamp = dt_util.now()
         except Exception as exc:
