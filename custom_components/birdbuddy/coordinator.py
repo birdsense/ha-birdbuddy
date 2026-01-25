@@ -70,24 +70,59 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 item_type = "unknown"
                 created_at = None
                 item_data = {"id": item}
-                LOGGER.info("Processing string item: %s", item_id)
             else:
                 # Assume FeedNode object
                 item_id = item.get("id") if hasattr(item, 'get') and item else None
                 item_type = item.get("__typename") if hasattr(item, 'get') and item else "unknown"
                 created_at = item.get("createdAt") if hasattr(item, 'get') and item else None
-                item_data = item.data if hasattr(item, 'data') and item else {"id": item_id}
-            
+                item_data = dict(item.data) if hasattr(item, 'data') and item else {"id": item_id}
+
             if not item_id:
                 continue
 
             new_ids.add(item_id)
-            
+
             # Skip if already processed
             if item_id in processed_ids:
                 continue
 
             LOGGER.warning("New feed item: %s (type: %s)", item_id, item_type)
+
+            # For NewPostcard items without media, fetch the full sighting data
+            has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
+            if item_type == "FeedItemNewPostcard" and not has_medias:
+                LOGGER.warning("Fetching sighting data for postcard: %s", item_id)
+                try:
+                    sighting = await self.client.sighting_from_postcard(item_id)
+                    if sighting:
+                        # Extract media info from sighting
+                        medias = []
+                        for media in sighting.medias:
+                            medias.append({
+                                "id": media.id,
+                                "contentUrl": media.content_url,
+                                "thumbnailUrl": media.thumbnail_url,
+                                "__typename": "MediaImage" if not media.is_video else "MediaVideo",
+                            })
+                        if medias:
+                            item_data["medias"] = medias
+                            LOGGER.warning("Added %d medias from sighting", len(medias))
+
+                        # Also add species info from sighting report if available
+                        if sighting.report:
+                            report = sighting.report
+                            if hasattr(report, 'sightings') and report.sightings:
+                                species_list = []
+                                for s in report.sightings:
+                                    if hasattr(s, 'species') and s.species:
+                                        species_list.append({
+                                            "name": s.species.get("name", "Unknown"),
+                                            "id": s.species.get("id"),
+                                        })
+                                if species_list:
+                                    item_data["species"] = species_list
+                except Exception as exc:
+                    LOGGER.warning("Failed to fetch sighting for %s: %s", item_id, exc)
 
             # Fire event with complete feed item data
             event_data = {
@@ -97,7 +132,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 "type": item_type,
             }
             LOGGER.warning("Firing event %s with data: %s", EVENT_NEW_FEED_ITEM, event_data)
-            
+
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
                 event_data=event_data,
