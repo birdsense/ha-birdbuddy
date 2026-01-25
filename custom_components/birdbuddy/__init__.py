@@ -30,6 +30,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Setup the integration"""
     # This will register the services even if there's no ConfigEntry yet...
+    print("BIRD BUDDY INTEGRATION LOADING - SETUP FUNCTION CALLED!")
+    hass.components.logger.getLogger("custom_components.birdbuddy").error("BIRD BUDDY INTEGRATION LOADING - ERROR LOG TEST")
     _setup_services(hass)
     return True
 
