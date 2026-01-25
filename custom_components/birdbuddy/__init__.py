@@ -29,8 +29,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Setup the integration"""
-    # This will register the services even if there's no ConfigEntry yet...
-    _setup_services(hass)
+    LOGGER.warning("=== BIRD BUDDY async_setup CALLED ===")
     return True
 
 
@@ -39,15 +38,24 @@ async def async_setup_entry(
     entry: ConfigEntry,
 ) -> bool:
     """Set up Bird Buddy from a config entry."""
+    LOGGER.warning("=== BIRD BUDDY async_setup_entry CALLED ===")
     hass.data.setdefault(DOMAIN, {})
+
+    # Register services if not already registered
+    if not hass.services.has_service(DOMAIN, "refresh_feed"):
+        LOGGER.warning("Registering Bird Buddy services...")
+        _setup_services(hass)
+    else:
+        LOGGER.warning("Bird Buddy services already registered")
+
     client = BirdBuddy(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
     client.language_code = hass.config.language
     coordinator = BirdBuddyDataUpdateCoordinator(hass, client, entry)
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
-    LOGGER.info("Setting up Bird Buddy coordinator for user: %s", entry.data[CONF_EMAIL])
+    LOGGER.warning("Setting up Bird Buddy coordinator for user: %s", entry.data[CONF_EMAIL])
     await coordinator.async_config_entry_first_refresh()
-    LOGGER.info("Bird Buddy coordinator setup completed")
+    LOGGER.warning("Bird Buddy coordinator setup completed")
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
@@ -76,21 +84,14 @@ async def async_unload_entry(
 
 def _setup_services(hass: HomeAssistant) -> bool:
     """Register services for feed-only integration"""
-    
+
     async def handle_reset_feed_storage(service: ServiceCall) -> None:
         """Reset feed storage to process all items again."""
-        LOGGER.info("Reset feed storage service called")
+        LOGGER.warning("=== RESET FEED STORAGE SERVICE CALLED ===")
         for coordinator in hass.data[DOMAIN].values():
             coordinator._reset_feed_storage()
-        LOGGER.info("Feed storage reset - all items will be processed again")
+        LOGGER.warning("Feed storage reset complete")
 
-    hass.services.async_register(
-        DOMAIN,
-        "reset_feed_storage",
-        handle_reset_feed_storage,
-        schema=vol.Schema({}),
-    )
-    
     async def handle_refresh_feed(service: ServiceCall) -> None:
         """Manually trigger feed refresh."""
         LOGGER.warning("=== REFRESH FEED SERVICE CALLED ===")
@@ -106,11 +107,21 @@ def _setup_services(hass: HomeAssistant) -> bool:
             await coordinator.force_refresh_now()
         LOGGER.warning("=== REFRESH FEED SERVICE COMPLETED ===")
 
-    hass.services.async_register(
-        DOMAIN,
-        "refresh_feed",
-        handle_refresh_feed,
-        schema=vol.Schema({}),
-    )
-    LOGGER.info("Bird Buddy services registered successfully")
-    return True
+    try:
+        hass.services.async_register(
+            DOMAIN,
+            "reset_feed_storage",
+            handle_reset_feed_storage,
+            schema=vol.Schema({}),
+        )
+        hass.services.async_register(
+            DOMAIN,
+            "refresh_feed",
+            handle_refresh_feed,
+            schema=vol.Schema({}),
+        )
+        LOGGER.warning("Bird Buddy services registered successfully")
+        return True
+    except Exception as exc:
+        LOGGER.error("Failed to register services: %s", exc)
+        return False
