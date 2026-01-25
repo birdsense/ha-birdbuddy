@@ -231,13 +231,16 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
     async def force_refresh_now(self) -> None:
         """Force immediate feed refresh and processing."""
-        LOGGER.warning("Force refresh triggered - processing feed immediately")
+        LOGGER.warning("=== FORCE REFRESH START ===")
         try:
+            LOGGER.warning("Calling client.refresh()...")
             await self.client.refresh()
+            LOGGER.warning("client.refresh() completed")
 
             # Get truly uncollected postcards - process these directly!
+            LOGGER.warning("Calling client.new_postcards()...")
             new_postcards = await self.client.new_postcards()
-            LOGGER.warning("Found %d new postcards from new_postcards()", len(new_postcards))
+            LOGGER.warning("new_postcards() returned %d items", len(new_postcards) if new_postcards else 0)
 
             # Log detailed info about each new postcard
             for pc in new_postcards:
