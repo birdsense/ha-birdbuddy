@@ -121,8 +121,10 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             await self.client.refresh()
 
             # Always process the feed using feed() to get ALL items without internal cache
-            feed = await self.client.feed()
-            LOGGER.info("Feed fetched: %d items", len(feed) if feed else 0)
+            # feed() returns a Feed object, we need to access .nodes to get the list
+            feed_response = await self.client.feed()
+            feed = list(feed_response.nodes) if feed_response else []
+            LOGGER.info("Feed fetched: %d items", len(feed))
             
             # Debug: log all feed items
             if feed:
@@ -145,7 +147,6 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
             raise UpdateFailed(f"Error fetching feed: {exc}") from exc
 
-
         return self.client
 
     def _reset_feed_storage(self) -> None:
@@ -154,9 +155,6 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_data = dict(self.config_entry.data)
         new_data[CONF_LAST_FEED_ITEM_IDS] = []
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-        
-
-        
         LOGGER.info("Feed storage reset - all items will be processed as new")
 
     async def force_refresh_now(self) -> None:
@@ -164,8 +162,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         LOGGER.info("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
-            feed = await self.client.feed()
-            LOGGER.info("Force refresh fetched: %d items", len(feed) if feed else 0)
+            feed_response = await self.client.feed()
+            feed = list(feed_response.nodes) if feed_response else []
+            LOGGER.info("Force refresh fetched: %d items", len(feed))
             
             if feed:
                 for i, item in enumerate(feed):
@@ -177,7 +176,6 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                            item.get("__typename") if hasattr(item, 'get') else "unknown", 
                                            item.get("createdAt") if hasattr(item, 'get') else "unknown")
             
-            # Process feed regardless of first_update flag
             await self._process_feed(feed)
             
             # Update timestamp
