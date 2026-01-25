@@ -200,6 +200,21 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
+            # Try refresh_feed with a recent timestamp to bypass caching
+            try:
+                since_time = datetime.now(timezone.utc) - timedelta(hours=24)
+                LOGGER.warning("Trying refresh_feed(since=%s)", since_time.isoformat())
+                recent_feed = await self.client.refresh_feed(since=since_time)
+                LOGGER.warning("refresh_feed(since=24h ago) returned: %d items", len(recent_feed) if recent_feed else 0)
+                if recent_feed:
+                    for i, item in enumerate(recent_feed):
+                        item_id = item.get("id") if hasattr(item, 'get') else "unknown"
+                        item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
+                        item_created = item.get("createdAt") if hasattr(item, 'get') else "unknown"
+                        LOGGER.warning("RecentFeed %d: ID=%s, Type=%s, Created=%s", i+1, item_id, item_type, item_created)
+            except Exception as exc:
+                LOGGER.warning("refresh_feed(since=...) failed: %s", exc)
+
             # Also try new_postcards() to see if recent items appear there
             try:
                 new_postcards = await self.client.new_postcards()
