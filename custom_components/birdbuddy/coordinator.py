@@ -88,20 +88,10 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
             LOGGER.info("New feed item: %s (type: %s)", item_id, item_type)
 
-            # For NewPostcard items without media, fetch the full sighting data
-            # Only try for recent postcards (< 2 hours old) to avoid API errors
+            # For NewPostcard items without media, try to fetch sighting data
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
-            is_recent = False
-            if created_at:
-                try:
-                    # Parse ISO timestamp and check if recent
-                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                    age = datetime.now(timezone.utc) - created_dt
-                    is_recent = age < timedelta(hours=2)
-                except (ValueError, TypeError):
-                    is_recent = False
 
-            if item_type == "FeedItemNewPostcard" and not has_medias and is_recent:
+            if item_type == "FeedItemNewPostcard" and not has_medias:
                 LOGGER.info("Fetching sighting data for recent postcard: %s", item_id)
                 try:
                     sighting = await self.client.sighting_from_postcard(item_id)
