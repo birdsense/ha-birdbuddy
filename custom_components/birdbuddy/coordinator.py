@@ -50,17 +50,24 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_data[CONF_LAST_FEED_ITEM_IDS] = list(item_ids)
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
 
-    async def _process_feed(self, feed: list) -> None:
-        """Process new feed items and emit events."""
+    async def _process_feed(self, feed: list, new_postcard_ids: set[str] = None) -> None:
+        """Process new feed items and emit events.
+
+        Args:
+            feed: List of feed items to process
+            new_postcard_ids: Set of IDs from new_postcards() that are truly uncollected
+        """
         if not feed:
             LOGGER.warning("_process_feed: No feed items to process")
             return
 
-        LOGGER.warning("_process_feed: Processing %d feed items", len(feed))
+        new_postcard_ids = new_postcard_ids or set()
+        LOGGER.warning("_process_feed: Processing %d feed items, %d are truly new postcards",
+                      len(feed), len(new_postcard_ids))
 
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
-        LOGGER.warning("_process_feed: Already processed %d items: %s", len(processed_ids), list(processed_ids)[:5])
+        LOGGER.warning("_process_feed: Already processed %d items", len(processed_ids))
         new_ids = set()
 
         for item in feed:
@@ -84,53 +91,57 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
             # Skip if already processed
             if item_id in processed_ids:
-                LOGGER.warning("Skipping already processed: %s", item_id)
                 continue
 
             LOGGER.warning("NEW feed item: %s (type: %s)", item_id, item_type)
 
-            # For NewPostcard items without media, try to fetch sighting data
+            # Check if we already have media from the feed data (CollectedPostcard has media)
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
 
-            if item_type == "FeedItemNewPostcard" and not has_medias:
-                LOGGER.warning("Fetching sighting data for postcard: %s", item_id)
-                try:
-                    sighting = await self.client.sighting_from_postcard(item_id)
-                    LOGGER.warning("Sighting response for %s: %s", item_id, sighting)
-                    if sighting:
-                        # Extract media info from sighting
-                        medias = []
-                        LOGGER.warning("Sighting has %d medias", len(sighting.medias) if sighting.medias else 0)
-                        for media in sighting.medias:
-                            medias.append({
-                                "id": media.id,
-                                "contentUrl": media.content_url,
-                                "thumbnailUrl": media.thumbnail_url,
-                                "__typename": "MediaImage" if not media.is_video else "MediaVideo",
-                            })
-                        if medias:
-                            item_data["medias"] = medias
-                            LOGGER.warning("Added %d medias from sighting", len(medias))
-                        else:
-                            LOGGER.warning("No medias found in sighting for %s", item_id)
+            if has_medias:
+                LOGGER.warning("Item %s already has %d medias from feed",
+                              item_id, len(item_data.get("medias", [])))
 
-                        # Also add species info from sighting report if available
-                        if sighting.report:
-                            report = sighting.report
-                            if hasattr(report, 'sightings') and report.sightings:
-                                species_list = []
-                                for s in report.sightings:
-                                    if hasattr(s, 'species') and s.species:
-                                        species_list.append({
-                                            "name": s.species.get("name", "Unknown"),
-                                            "id": s.species.get("id"),
-                                        })
-                                if species_list:
-                                    item_data["species"] = species_list
-                    else:
-                        LOGGER.warning("No sighting returned for %s", item_id)
-                except Exception as exc:
-                    LOGGER.warning("FAILED to fetch sighting for %s: %s", item_id, exc)
+            # For NewPostcard items without media, try to fetch sighting data
+            # But ONLY if it's in the new_postcard_ids set (truly uncollected)
+            if item_type == "FeedItemNewPostcard" and not has_medias:
+                if item_id in new_postcard_ids:
+                    LOGGER.warning("Fetching sighting for truly new postcard: %s", item_id)
+                    try:
+                        sighting = await self.client.sighting_from_postcard(item_id)
+                        if sighting:
+                            # Extract media info from sighting
+                            medias = []
+                            LOGGER.warning("Sighting has %d medias",
+                                          len(sighting.medias) if sighting.medias else 0)
+                            for media in sighting.medias:
+                                medias.append({
+                                    "id": media.id,
+                                    "contentUrl": media.content_url,
+                                    "thumbnailUrl": media.thumbnail_url,
+                                    "__typename": "MediaImage" if not media.is_video else "MediaVideo",
+                                })
+                            if medias:
+                                item_data["medias"] = medias
+                                LOGGER.warning("Added %d medias from sighting", len(medias))
+
+                            # Also add species info from sighting report if available
+                            if sighting.report:
+                                report = sighting.report
+                                if hasattr(report, 'sightings') and report.sightings:
+                                    species_list = []
+                                    for s in report.sightings:
+                                        if hasattr(s, 'species') and s.species:
+                                            species_list.append({
+                                                "name": s.species.get("name", "Unknown"),
+                                                "id": s.species.get("id"),
+                                            })
+                                    if species_list:
+                                        item_data["species"] = species_list
+                    except Exception as exc:
+                        LOGGER.warning("FAILED to fetch sighting for %s: %s", item_id, exc)
+                else:
+                    LOGGER.warning("Postcard %s already collected in app (not in new_postcards)", item_id)
 
             # Fire event with complete feed item data
             event_data = {
@@ -139,15 +150,16 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 "created_at": created_at,
                 "type": item_type,
             }
-            LOGGER.warning("FIRING EVENT %s for item %s", EVENT_NEW_FEED_ITEM, item_id)
-            LOGGER.warning("Event data keys: %s, has medias: %s", list(event_data.get("item_data", {}).keys()), "medias" in event_data.get("item_data", {}))
+
+            has_medias_now = "medias" in item_data and len(item_data.get("medias", [])) > 0
+            LOGGER.warning("FIRING EVENT for %s - type: %s, has_medias: %s",
+                          item_id, item_type, has_medias_now)
 
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
                 event_data=event_data,
                 origin=EventOrigin.remote,
             )
-            LOGGER.warning("Event fired successfully for %s", item_id)
 
         # Save all item IDs we've now seen
         all_seen_ids = processed_ids.union(new_ids)
@@ -162,8 +174,17 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
-            # Use refresh_feed with explicit timestamp to get recent items
-            # The regular feed() method doesn't return the newest postcards
+            # Get truly uncollected postcards (these work with sighting_from_postcard)
+            new_postcards = await self.client.new_postcards()
+            new_postcard_ids = set()
+            for pc in new_postcards:
+                pc_id = pc.get("id") if hasattr(pc, 'get') else None
+                if pc_id:
+                    new_postcard_ids.add(pc_id)
+            LOGGER.info("Found %d truly new postcards", len(new_postcard_ids))
+
+            # Use refresh_feed with explicit timestamp to get all recent items
+            # This includes both new AND collected postcards
             since_time = datetime.now(timezone.utc) - timedelta(hours=24)
             feed = await self.client.refresh_feed(since=since_time)
             LOGGER.info("Feed fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
@@ -171,7 +192,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if not feed:
                 LOGGER.info("No new feed items since last check")
 
-            await self._process_feed(feed)
+            await self._process_feed(feed, new_postcard_ids)
 
             # Update timestamp for successful operations
             self.last_update_timestamp = dt_util.now()
@@ -202,7 +223,16 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
-            # Use refresh_feed with explicit timestamp to get recent items
+            # Get truly uncollected postcards (these work with sighting_from_postcard)
+            new_postcards = await self.client.new_postcards()
+            new_postcard_ids = set()
+            for pc in new_postcards:
+                pc_id = pc.get("id") if hasattr(pc, 'get') else None
+                if pc_id:
+                    new_postcard_ids.add(pc_id)
+            LOGGER.warning("Found %d truly new postcards: %s", len(new_postcard_ids), list(new_postcard_ids))
+
+            # Use refresh_feed with explicit timestamp to get all recent items
             since_time = datetime.now(timezone.utc) - timedelta(hours=24)
             feed = await self.client.refresh_feed(since=since_time)
             LOGGER.warning("Force refresh fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
@@ -212,9 +242,10 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 for item in feed:
                     item_id = item.get("id") if hasattr(item, 'get') else "unknown"
                     item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
-                    LOGGER.warning("Feed item: %s (%s)", item_id, item_type)
+                    is_truly_new = item_id in new_postcard_ids
+                    LOGGER.warning("Feed item: %s (%s) - truly_new: %s", item_id, item_type, is_truly_new)
 
-            await self._process_feed(feed)
+            await self._process_feed(feed, new_postcard_ids)
 
             # Update timestamp
             self.last_update_timestamp = dt_util.now()
