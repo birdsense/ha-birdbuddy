@@ -192,14 +192,21 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
     async def force_refresh_now(self) -> None:
         """Force immediate feed refresh and processing."""
-        LOGGER.info("Force refresh triggered - processing feed immediately")
+        LOGGER.warning("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
 
             # Use refresh_feed with explicit timestamp to get recent items
             since_time = datetime.now(timezone.utc) - timedelta(hours=24)
             feed = await self.client.refresh_feed(since=since_time)
-            LOGGER.info("Force refresh fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
+            LOGGER.warning("Force refresh fetched: %d items (since %s)", len(feed) if feed else 0, since_time.isoformat())
+
+            # Log each item for debugging
+            if feed:
+                for item in feed:
+                    item_id = item.get("id") if hasattr(item, 'get') else "unknown"
+                    item_type = item.get("__typename") if hasattr(item, 'get') else "unknown"
+                    LOGGER.warning("Feed item: %s (%s)", item_id, item_type)
 
             await self._process_feed(feed)
 
