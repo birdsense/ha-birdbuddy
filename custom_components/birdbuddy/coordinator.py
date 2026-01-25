@@ -177,6 +177,12 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             # Update timestamp for successful operations
             self.last_update_timestamp = dt_util.now()
         except Exception as exc:
+            # Don't mark entities unavailable for temporary API errors (502, 503, etc)
+            error_str = str(exc)
+            if "502" in error_str or "503" in error_str or "504" in error_str:
+                LOGGER.warning("Bird Buddy API temporarily unavailable: %s", exc)
+                # Return existing client data without raising - entities stay available
+                return self.client
             LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
             raise UpdateFailed(f"Error fetching feed: {exc}") from exc
 
