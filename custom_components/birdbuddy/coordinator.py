@@ -31,7 +31,6 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     ) -> None:
         """Initialize the BirdBuddy data coordinator."""
         self.client = client
-        self.first_update = True
         self.last_update_timestamp = None
         super().__init__(
             hass,
@@ -51,7 +50,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_data[CONF_LAST_FEED_ITEM_IDS] = list(item_ids)
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
 
-    async def _process_feed(self, feed: list[FeedNode]) -> None:
+    async def _process_feed(self, feed: list) -> None:
         """Process new feed items and emit events."""
         if not feed:
             LOGGER.info("No feed items found")
@@ -65,7 +64,20 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_ids = set()
 
         for item in feed:
-            item_id = item.get("id")
+            # Handle both FeedNode objects and strings
+            if isinstance(item, str):
+                item_id = item
+                item_type = "unknown"
+                created_at = None
+                item_data = {"id": item}
+                LOGGER.info("Processing string item: %s", item_id)
+            else:
+                # Assume FeedNode object
+                item_id = item.get("id") if hasattr(item, 'get') and item else None
+                item_type = item.get("__typename") if hasattr(item, 'get') and item else "unknown"
+                created_at = item.get("createdAt") if hasattr(item, 'get') and item else None
+                item_data = item.data if hasattr(item, 'data') and item else {"id": item_id}
+            
             if not item_id:
                 continue
 
@@ -75,16 +87,16 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if item_id in processed_ids:
                 continue
 
-            LOGGER.info("New feed item: %s (type: %s)", item_id, item.get("__typename"))
+            LOGGER.info("New feed item: %s (type: %s)", item_id, item_type)
             
             # Fire event with complete feed item data
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
                 event_data={
                     "item_id": item_id,
-                    "item_data": item.data,
-                    "created_at": item.get("createdAt"),
-                    "type": item.get("__typename"),
+                    "item_data": item_data,
+                    "created_at": created_at,
+                    "type": item_type,
                 },
                 origin=EventOrigin.remote,
             )
@@ -100,25 +112,24 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             await self.client.refresh()
 
-            # Skip processing the Feed on the first update. This works around a minor issue
-            # where the `automation` integration is not loaded yet by the time we make our first
-            # update call. If we proceed, we might emit feed items while there are
-            # no automations listening.
-            if not self.first_update:
-                feed = await self.client.refresh_feed()
-                LOGGER.info("Feed fetched: %d items", len(feed) if feed else 0)
-                
-                # Debug: log all feed items
-                if feed:
-                    for i, item in enumerate(feed):
+            # Always process the feed using feed() to get ALL items without internal cache
+            feed = await self.client.feed()
+            LOGGER.info("Feed fetched: %d items", len(feed) if feed else 0)
+            
+            # Debug: log all feed items
+            if feed:
+                for i, item in enumerate(feed):
+                    if isinstance(item, str):
+                        LOGGER.info("Feed item %d: ID=%s, Type=string", i+1, item)
+                    else:
                         LOGGER.info("Feed item %d: ID=%s, Type=%s, Created=%s", 
-                                   i+1, item.get("id"), item.get("__typename"), item.get("createdAt"))
-                else:
-                    LOGGER.warning("No feed items returned from Bird Buddy API")
-                
-                await self._process_feed(feed)
+                                   i+1, item.get("id") if hasattr(item, 'get') else "unknown", 
+                                   item.get("__typename") if hasattr(item, 'get') else "unknown", 
+                                   item.get("createdAt") if hasattr(item, 'get') else "unknown")
             else:
-                LOGGER.info("First update completed - next update will process feed items")
+                LOGGER.warning("No feed items returned from Bird Buddy API")
+            
+            await self._process_feed(feed)
             
             # Update timestamp for successful operations
             self.last_update_timestamp = dt_util.now()
@@ -126,7 +137,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
             raise UpdateFailed(f"Error fetching feed: {exc}") from exc
 
-        self.first_update = False
+
         return self.client
 
     def _reset_feed_storage(self) -> None:
@@ -136,8 +147,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_data[CONF_LAST_FEED_ITEM_IDS] = []
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
         
-        # Reset first_update to trigger processing on next update
-        self.first_update = True
+
         
         LOGGER.info("Feed storage reset - all items will be processed as new")
 
@@ -146,13 +156,18 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         LOGGER.info("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
-            feed = await self.client.refresh_feed()
+            feed = await self.client.feed()
             LOGGER.info("Force refresh fetched: %d items", len(feed) if feed else 0)
             
             if feed:
                 for i, item in enumerate(feed):
-                    LOGGER.info("Force refresh item %d: ID=%s, Type=%s, Created=%s", 
-                                       i+1, item.get("id"), item.get("__typename"), item.get("createdAt"))
+                    if isinstance(item, str):
+                        LOGGER.info("Force refresh item %d: ID=%s, Type=string", i+1, item)
+                    else:
+                        LOGGER.info("Force refresh item %d: ID=%s, Type=%s, Created=%s", 
+                                           i+1, item.get("id") if hasattr(item, 'get') else "unknown", 
+                                           item.get("__typename") if hasattr(item, 'get') else "unknown", 
+                                           item.get("createdAt") if hasattr(item, 'get') else "unknown")
             
             # Process feed regardless of first_update flag
             await self._process_feed(feed)
