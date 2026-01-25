@@ -30,8 +30,6 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Setup the integration"""
     # This will register the services even if there's no ConfigEntry yet...
-    print("BIRD BUDDY INTEGRATION LOADING - SETUP FUNCTION CALLED!")
-    hass.components.logger.getLogger("custom_components.birdbuddy").error("BIRD BUDDY INTEGRATION LOADING - ERROR LOG TEST")
     _setup_services(hass)
     return True
 
@@ -81,6 +79,7 @@ def _setup_services(hass: HomeAssistant) -> bool:
     
     async def handle_reset_feed_storage(service: ServiceCall) -> None:
         """Reset feed storage to process all items again."""
+        LOGGER.info("Reset feed storage service called")
         for coordinator in hass.data[DOMAIN].values():
             coordinator._reset_feed_storage()
         LOGGER.info("Feed storage reset - all items will be processed again")
@@ -94,6 +93,7 @@ def _setup_services(hass: HomeAssistant) -> bool:
     
     async def handle_refresh_feed(service: ServiceCall) -> None:
         """Manually trigger feed refresh."""
+        LOGGER.info("Manual refresh feed service called")
         for coordinator in hass.data[DOMAIN].values():
             await coordinator.force_refresh_now()
         LOGGER.info("Manual feed refresh triggered")
@@ -104,4 +104,5 @@ def _setup_services(hass: HomeAssistant) -> bool:
         handle_refresh_feed,
         schema=vol.Schema({}),
     )
+    LOGGER.info("Bird Buddy services registered successfully")
     return True
