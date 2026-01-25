@@ -93,12 +93,14 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
 
             if item_type == "FeedItemNewPostcard" and not has_medias:
-                LOGGER.info("Fetching sighting data for recent postcard: %s", item_id)
+                LOGGER.warning("Fetching sighting data for postcard: %s", item_id)
                 try:
                     sighting = await self.client.sighting_from_postcard(item_id)
+                    LOGGER.warning("Sighting response for %s: %s", item_id, sighting)
                     if sighting:
                         # Extract media info from sighting
                         medias = []
+                        LOGGER.warning("Sighting has %d medias", len(sighting.medias) if sighting.medias else 0)
                         for media in sighting.medias:
                             medias.append({
                                 "id": media.id,
@@ -108,7 +110,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                             })
                         if medias:
                             item_data["medias"] = medias
-                            LOGGER.info("Added %d medias from sighting", len(medias))
+                            LOGGER.warning("Added %d medias from sighting", len(medias))
+                        else:
+                            LOGGER.warning("No medias found in sighting for %s", item_id)
 
                         # Also add species info from sighting report if available
                         if sighting.report:
@@ -123,8 +127,10 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                         })
                                 if species_list:
                                     item_data["species"] = species_list
+                    else:
+                        LOGGER.warning("No sighting returned for %s", item_id)
                 except Exception as exc:
-                    LOGGER.debug("Failed to fetch sighting for %s: %s", item_id, exc)
+                    LOGGER.warning("FAILED to fetch sighting for %s: %s", item_id, exc)
 
             # Fire event with complete feed item data
             event_data = {
