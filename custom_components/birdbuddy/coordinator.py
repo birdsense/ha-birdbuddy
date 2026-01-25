@@ -138,6 +138,16 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                             })
                                     if species_list:
                                         item_data["species"] = species_list
+
+                            # Auto-collect the postcard so user doesn't need to open the app
+                            try:
+                                collected = await self.client.finish_postcard(
+                                    feed_item_id=item_id,
+                                    sighting_report=sighting,
+                                )
+                                LOGGER.warning("Auto-collected postcard %s: %s", item_id, collected)
+                            except Exception as collect_exc:
+                                LOGGER.warning("Failed to auto-collect %s: %s", item_id, collect_exc)
                     except Exception as exc:
                         LOGGER.warning("FAILED to fetch sighting for %s: %s", item_id, exc)
                 else:
