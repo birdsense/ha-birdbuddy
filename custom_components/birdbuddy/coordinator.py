@@ -53,14 +53,14 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     async def _process_feed(self, feed: list) -> None:
         """Process new feed items and emit events."""
         if not feed:
-            LOGGER.info("No feed items found")
+            LOGGER.warning("No feed items found")
             return
 
-        LOGGER.info("Processing %d feed items", len(feed))
-        
+        LOGGER.warning("Processing %d feed items", len(feed))
+
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
-        LOGGER.info("Already processed %d items", len(processed_ids))
+        LOGGER.warning("Already processed %d items", len(processed_ids))
         new_ids = set()
 
         for item in feed:
@@ -87,8 +87,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if item_id in processed_ids:
                 continue
 
-            LOGGER.info("New feed item: %s (type: %s)", item_id, item_type)
-            
+            LOGGER.warning("New feed item: %s (type: %s)", item_id, item_type)
+
             # Fire event with complete feed item data
             event_data = {
                 "item_id": item_id,
@@ -96,7 +96,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 "created_at": created_at,
                 "type": item_type,
             }
-            LOGGER.info("Firing event %s with data: %s", EVENT_NEW_FEED_ITEM, event_data)
+            LOGGER.warning("Firing event %s with data: %s", EVENT_NEW_FEED_ITEM, event_data)
             
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
@@ -108,11 +108,11 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         all_seen_ids = processed_ids.union(new_ids)
         self._save_processed_item_ids(all_seen_ids)
         new_items_count = len(new_ids - processed_ids)
-        LOGGER.info("Processed %d new items, %d total items tracked", 
-                   new_items_count, len(all_seen_ids))
-        
+        LOGGER.warning("Processed %d new items, %d total items tracked",
+                       new_items_count, len(all_seen_ids))
+
         if new_items_count == 0:
-            LOGGER.info("No new feed items found to emit events for")
+            LOGGER.warning("No new feed items found to emit events for")
 
     async def _async_update_data(self) -> BirdBuddy:
         """Fetch latest feed data."""
@@ -159,12 +159,12 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
     async def force_refresh_now(self) -> None:
         """Force immediate feed refresh and processing."""
-        LOGGER.info("Force refresh triggered - processing feed immediately")
+        LOGGER.warning("Force refresh triggered - processing feed immediately")
         try:
             await self.client.refresh()
             feed_response = await self.client.feed()
             feed = list(feed_response.nodes) if feed_response else []
-            LOGGER.info("Force refresh fetched: %d items", len(feed))
+            LOGGER.warning("Force refresh fetched: %d items", len(feed))
             
             if feed:
                 for i, item in enumerate(feed):
