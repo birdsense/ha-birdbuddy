@@ -53,14 +53,14 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     async def _process_feed(self, feed: list) -> None:
         """Process new feed items and emit events."""
         if not feed:
-            LOGGER.debug("No feed items found")
+            LOGGER.warning("_process_feed: No feed items to process")
             return
 
-        LOGGER.debug("Processing %d feed items", len(feed))
+        LOGGER.warning("_process_feed: Processing %d feed items", len(feed))
 
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
-        LOGGER.debug("Already processed %d items", len(processed_ids))
+        LOGGER.warning("_process_feed: Already processed %d items: %s", len(processed_ids), list(processed_ids)[:5])
         new_ids = set()
 
         for item in feed:
@@ -84,9 +84,10 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
             # Skip if already processed
             if item_id in processed_ids:
+                LOGGER.warning("Skipping already processed: %s", item_id)
                 continue
 
-            LOGGER.info("New feed item: %s (type: %s)", item_id, item_type)
+            LOGGER.warning("NEW feed item: %s (type: %s)", item_id, item_type)
 
             # For NewPostcard items without media, try to fetch sighting data
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
@@ -132,13 +133,15 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 "created_at": created_at,
                 "type": item_type,
             }
-            LOGGER.info("Firing event %s for item %s", EVENT_NEW_FEED_ITEM, item_id)
+            LOGGER.warning("FIRING EVENT %s for item %s", EVENT_NEW_FEED_ITEM, item_id)
+            LOGGER.warning("Event data keys: %s, has medias: %s", list(event_data.get("item_data", {}).keys()), "medias" in event_data.get("item_data", {}))
 
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
                 event_data=event_data,
                 origin=EventOrigin.remote,
             )
+            LOGGER.warning("Event fired successfully for %s", item_id)
 
         # Save all item IDs we've now seen
         all_seen_ids = processed_ids.union(new_ids)
@@ -181,10 +184,11 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     def _reset_feed_storage(self) -> None:
         """Reset the feed storage to process all items again."""
         # Clear stored item IDs
+        old_count = len(self.config_entry.data.get(CONF_LAST_FEED_ITEM_IDS, []))
         new_data = dict(self.config_entry.data)
         new_data[CONF_LAST_FEED_ITEM_IDS] = []
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-        LOGGER.info("Feed storage reset - all items will be processed as new")
+        LOGGER.warning("Feed storage reset - cleared %d items, all will be processed as new", old_count)
 
     async def force_refresh_now(self) -> None:
         """Force immediate feed refresh and processing."""
