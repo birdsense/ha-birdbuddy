@@ -90,22 +90,29 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             LOGGER.info("New feed item: %s (type: %s)", item_id, item_type)
             
             # Fire event with complete feed item data
+            event_data = {
+                "item_id": item_id,
+                "item_data": item_data,
+                "created_at": created_at,
+                "type": item_type,
+            }
+            LOGGER.info("Firing event %s with data: %s", EVENT_NEW_FEED_ITEM, event_data)
+            
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
-                event_data={
-                    "item_id": item_id,
-                    "item_data": item_data,
-                    "created_at": created_at,
-                    "type": item_type,
-                },
+                event_data=event_data,
                 origin=EventOrigin.remote,
             )
 
         # Save all item IDs we've now seen
         all_seen_ids = processed_ids.union(new_ids)
         self._save_processed_item_ids(all_seen_ids)
+        new_items_count = len(new_ids - processed_ids)
         LOGGER.info("Processed %d new items, %d total items tracked", 
-                   len(new_ids - processed_ids), len(all_seen_ids))
+                   new_items_count, len(all_seen_ids))
+        
+        if new_items_count == 0:
+            LOGGER.info("No new feed items found to emit events for")
 
     async def _async_update_data(self) -> BirdBuddy:
         """Fetch latest feed data."""
