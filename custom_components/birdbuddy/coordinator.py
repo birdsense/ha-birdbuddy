@@ -73,7 +73,9 @@ query GetFeedWithMedias {
                                 thumbnailUrl
                             }
                         }
-                        mediaSpeciesAssignedName
+                        mediaSpeciesAssignedName {
+                            name
+                        }
                         sightingReportPreview {
                             species {
                                 name
@@ -179,7 +181,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                         item_data = {"medias": node["medias"]}
                         # Also get species name if available
                         if node.get("mediaSpeciesAssignedName"):
-                            item_data["speciesName"] = node["mediaSpeciesAssignedName"]
+                            item_data["speciesName"] = node["mediaSpeciesAssignedName"].get("name")
                         if node.get("sightingReportPreview") and node["sightingReportPreview"].get("species"):
                             item_data["species"] = node["sightingReportPreview"]["species"]
                         media_map[item_id] = item_data
