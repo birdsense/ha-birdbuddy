@@ -76,11 +76,6 @@ query GetFeedWithMedias {
                         mediaSpeciesAssignedName {
                             name
                         }
-                        sightingReportPreview {
-                            species {
-                                name
-                            }
-                        }
                     }
                     ... on FeedItemCollectedPostcard {
                         id
@@ -182,8 +177,6 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                         # Also get species name if available
                         if node.get("mediaSpeciesAssignedName"):
                             item_data["speciesName"] = node["mediaSpeciesAssignedName"].get("name")
-                        if node.get("sightingReportPreview") and node["sightingReportPreview"].get("species"):
-                            item_data["species"] = node["sightingReportPreview"]["species"]
                         media_map[item_id] = item_data
                         LOGGER.warning("Found %d medias for %s (species: %s)",
                                       len(node["medias"]), item_id,
