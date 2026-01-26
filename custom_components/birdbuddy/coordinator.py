@@ -36,6 +36,18 @@ query IntrospectNewPostcard {
 }
 """
 
+# GraphQL introspection query to discover MediaImageSize enum values
+INTROSPECT_MEDIA_IMAGE_SIZE_QUERY = """
+query IntrospectMediaImageSize {
+    __type(name: "MediaImageSize") {
+        name
+        enumValues {
+            name
+        }
+    }
+}
+"""
+
 # Custom GraphQL query to get postcards with medias
 # FeedItemNewPostcard HAS a medias field, pybirdbuddy just doesn't request it!
 # Media is an interface - all fields must be queried via inline fragments
@@ -54,7 +66,7 @@ query GetFeedWithMedias {
                             ... on MediaImage {
                                 id
                                 thumbnailUrl
-                                contentUrl(size: FULL)
+                                contentUrl(size: ORIGINAL)
                             }
                             ... on MediaVideo {
                                 id
@@ -76,7 +88,7 @@ query GetFeedWithMedias {
                             ... on MediaImage {
                                 id
                                 thumbnailUrl
-                                contentUrl(size: FULL)
+                                contentUrl(size: ORIGINAL)
                             }
                             ... on MediaVideo {
                                 id
@@ -133,6 +145,18 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 LOGGER.warning("FeedItemNewPostcard has fields: %s", field_names)
         except Exception as exc:
             LOGGER.warning("Schema introspection failed: %s", exc)
+
+        # Introspect MediaImageSize enum to see valid values
+        try:
+            enum_result = await self.client._make_request(
+                query=INTROSPECT_MEDIA_IMAGE_SIZE_QUERY,
+            )
+            if enum_result and "__type" in enum_result:
+                enum_values = enum_result["__type"].get("enumValues", [])
+                value_names = [v["name"] for v in enum_values]
+                LOGGER.warning("MediaImageSize enum values: %s", value_names)
+        except Exception as exc:
+            LOGGER.warning("MediaImageSize introspection failed: %s", exc)
 
         # Now try to fetch feed with media fields
         try:
