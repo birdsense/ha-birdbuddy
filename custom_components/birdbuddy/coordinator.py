@@ -16,6 +16,31 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import DOMAIN, EVENT_NEW_FEED_ITEM, LOGGER, POLLING_INTERVAL, CONF_LAST_FEED_ITEM_IDS
 
+# Custom GraphQL query to get postcard with media (pybirdbuddy doesn't request this)
+POSTCARD_WITH_MEDIA_QUERY = """
+query GetPostcardMedia($feedItemId: ID!) {
+    feedItem(id: $feedItemId) {
+        ... on FeedItemNewPostcard {
+            id
+            createdAt
+            postcard {
+                id
+                coverMedia {
+                    id
+                    thumbnailUrl
+                    contentUrl
+                }
+                medias {
+                    id
+                    thumbnailUrl
+                    contentUrl
+                }
+            }
+        }
+    }
+}
+"""
+
 
 class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     """Class to coordinate fetching BirdBuddy feed data."""
@@ -38,6 +63,31 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             name=DOMAIN,
             update_interval=POLLING_INTERVAL,
         )
+
+    async def _fetch_postcard_media(self, feed_item_id: str) -> dict | None:
+        """Fetch postcard media using custom GraphQL query.
+
+        pybirdbuddy doesn't request the 'postcard' field which contains media.
+        This method makes a direct GraphQL call to get that data.
+        """
+        try:
+            LOGGER.warning("Fetching postcard media via custom query for: %s", feed_item_id)
+            result = await self.client._make_request(
+                query=POSTCARD_WITH_MEDIA_QUERY,
+                variables={"feedItemId": feed_item_id},
+            )
+            LOGGER.warning("Custom query result for %s: %s", feed_item_id, result)
+
+            if result and "feedItem" in result:
+                feed_item = result["feedItem"]
+                if feed_item and "postcard" in feed_item:
+                    postcard = feed_item["postcard"]
+                    LOGGER.warning("Found postcard data: %s", postcard)
+                    return postcard
+            return None
+        except Exception as exc:
+            LOGGER.warning("Failed to fetch postcard media for %s: %s", feed_item_id, exc)
+            return None
 
     def _get_processed_item_ids(self) -> set[str]:
         """Get set of previously processed item IDs from config entry data."""
@@ -102,20 +152,40 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 LOGGER.warning("Item %s already has %d medias from feed",
                               item_id, len(item_data.get("medias", [])))
 
-            # For NewPostcard items without media, try to fetch sighting data
-            # But ONLY if it's in the new_postcard_ids set (truly uncollected)
+            # For NewPostcard items without media, try to fetch media
             if item_type == "FeedItemNewPostcard" and not has_medias:
-                if item_id in new_postcard_ids:
-                    LOGGER.warning("Fetching sighting for truly new postcard: %s", item_id)
+                # First try our custom query to get postcard media directly
+                postcard_data = await self._fetch_postcard_media(item_id)
+                if postcard_data:
+                    # Extract media from postcard
+                    medias = []
+                    if postcard_data.get("coverMedia"):
+                        cover = postcard_data["coverMedia"]
+                        medias.append({
+                            "id": cover.get("id"),
+                            "contentUrl": cover.get("contentUrl"),
+                            "thumbnailUrl": cover.get("thumbnailUrl"),
+                            "__typename": "MediaImage",
+                        })
+                    if postcard_data.get("medias"):
+                        for media in postcard_data["medias"]:
+                            medias.append({
+                                "id": media.get("id"),
+                                "contentUrl": media.get("contentUrl"),
+                                "thumbnailUrl": media.get("thumbnailUrl"),
+                                "__typename": "MediaImage",
+                            })
+                    if medias:
+                        item_data["medias"] = medias
+                        LOGGER.warning("Got %d medias from custom postcard query", len(medias))
+
+                # If custom query didn't get media and it's truly new, try sighting API
+                if not item_data.get("medias") and item_id in new_postcard_ids:
+                    LOGGER.warning("Trying sighting_from_postcard for: %s", item_id)
                     try:
-                        # Pass the FeedNode object instead of just the ID
                         sighting = await self.client.sighting_from_postcard(item)
-                        LOGGER.warning("Sighting result for %s: %s", item_id, sighting)
                         if sighting:
-                            # Extract media info from sighting
                             medias = []
-                            LOGGER.warning("Sighting has %d medias",
-                                          len(sighting.medias) if sighting.medias else 0)
                             for media in sighting.medias:
                                 medias.append({
                                     "id": media.id,
@@ -127,21 +197,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                 item_data["medias"] = medias
                                 LOGGER.warning("Added %d medias from sighting", len(medias))
 
-                            # Also add species info from sighting report if available
-                            if sighting.report:
-                                report = sighting.report
-                                if hasattr(report, 'sightings') and report.sightings:
-                                    species_list = []
-                                    for s in report.sightings:
-                                        if hasattr(s, 'species') and s.species:
-                                            species_list.append({
-                                                "name": s.species.get("name", "Unknown"),
-                                                "id": s.species.get("id"),
-                                            })
-                                    if species_list:
-                                        item_data["species"] = species_list
-
-                            # Auto-collect the postcard so user doesn't need to open the app
+                            # Auto-collect the postcard
                             try:
                                 collected = await self.client.finish_postcard(
                                     feed_item_id=item_id,
@@ -151,9 +207,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                             except Exception as collect_exc:
                                 LOGGER.warning("Failed to auto-collect %s: %s", item_id, collect_exc)
                     except Exception as exc:
-                        LOGGER.warning("FAILED to fetch sighting for %s: %s", item_id, exc)
-                else:
-                    LOGGER.warning("Postcard %s already collected in app (not in new_postcards)", item_id)
+                        LOGGER.warning("sighting_from_postcard failed for %s: %s", item_id, exc)
 
             # Fire event with complete feed item data
             event_data = {
