@@ -16,24 +16,37 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import DOMAIN, EVENT_NEW_FEED_ITEM, LOGGER, POLLING_INTERVAL, CONF_LAST_FEED_ITEM_IDS
 
-# Custom GraphQL query to get postcard with media (pybirdbuddy doesn't request this)
-POSTCARD_WITH_MEDIA_QUERY = """
-query GetPostcardMedia($feedItemId: ID!) {
-    feedItem(id: $feedItemId) {
-        ... on FeedItemNewPostcard {
-            id
-            createdAt
-            postcard {
-                id
-                coverMedia {
-                    id
-                    thumbnailUrl
-                    contentUrl
-                }
-                medias {
-                    id
-                    thumbnailUrl
-                    contentUrl
+# Custom GraphQL query to get postcards with media (pybirdbuddy doesn't request postcard field)
+# We fetch through me.feed and include the postcard field with its media
+FEED_WITH_POSTCARD_MEDIA_QUERY = """
+query GetFeedWithPostcardMedia {
+    me {
+        feed(first: 20) {
+            edges {
+                node {
+                    ... on FeedItemNewPostcard {
+                        id
+                        createdAt
+                        __typename
+                        postcard {
+                            id
+                            coverMedia {
+                                id
+                                thumbnailUrl
+                                contentUrl
+                            }
+                        }
+                    }
+                    ... on FeedItemCollectedPostcard {
+                        id
+                        createdAt
+                        __typename
+                        medias {
+                            id
+                            thumbnailUrl
+                            contentUrl
+                        }
+                    }
                 }
             }
         }
@@ -64,30 +77,49 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             update_interval=POLLING_INTERVAL,
         )
 
-    async def _fetch_postcard_media(self, feed_item_id: str) -> dict | None:
-        """Fetch postcard media using custom GraphQL query.
+    async def _fetch_feed_with_postcard_media(self) -> dict:
+        """Fetch feed with postcard media using custom GraphQL query.
 
         pybirdbuddy doesn't request the 'postcard' field which contains media.
-        This method makes a direct GraphQL call to get that data.
+        This method makes a direct GraphQL call to get that data for all items.
+        Returns a dict mapping feed item ID to its postcard/media data.
         """
+        media_map = {}
         try:
-            LOGGER.warning("Fetching postcard media via custom query for: %s", feed_item_id)
+            LOGGER.warning("Fetching feed with postcard media via custom query")
             result = await self.client._make_request(
-                query=POSTCARD_WITH_MEDIA_QUERY,
-                variables={"feedItemId": feed_item_id},
+                query=FEED_WITH_POSTCARD_MEDIA_QUERY,
             )
-            LOGGER.warning("Custom query result for %s: %s", feed_item_id, result)
+            LOGGER.warning("Custom feed query result: %s", result)
 
-            if result and "feedItem" in result:
-                feed_item = result["feedItem"]
-                if feed_item and "postcard" in feed_item:
-                    postcard = feed_item["postcard"]
-                    LOGGER.warning("Found postcard data: %s", postcard)
-                    return postcard
-            return None
+            if result and "me" in result and "feed" in result["me"]:
+                edges = result["me"]["feed"].get("edges", [])
+                for edge in edges:
+                    node = edge.get("node", {})
+                    item_id = node.get("id")
+                    if not item_id:
+                        continue
+
+                    # For NewPostcard, extract postcard.coverMedia
+                    if node.get("__typename") == "FeedItemNewPostcard" and "postcard" in node:
+                        postcard = node["postcard"]
+                        if postcard and postcard.get("coverMedia"):
+                            media_map[item_id] = {
+                                "coverMedia": postcard["coverMedia"]
+                            }
+                            LOGGER.warning("Found coverMedia for %s: %s", item_id, postcard["coverMedia"])
+
+                    # For CollectedPostcard, extract medias
+                    elif node.get("__typename") == "FeedItemCollectedPostcard" and "medias" in node:
+                        media_map[item_id] = {
+                            "medias": node["medias"]
+                        }
+
+            LOGGER.warning("Media map has %d items with media", len(media_map))
         except Exception as exc:
-            LOGGER.warning("Failed to fetch postcard media for %s: %s", feed_item_id, exc)
-            return None
+            LOGGER.warning("Failed to fetch feed with postcard media: %s", exc)
+
+        return media_map
 
     def _get_processed_item_ids(self) -> set[str]:
         """Get set of previously processed item IDs from config entry data."""
@@ -114,6 +146,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_postcard_ids = new_postcard_ids or set()
         LOGGER.warning("_process_feed: Processing %d feed items, %d are truly new postcards",
                       len(feed), len(new_postcard_ids))
+
+        # Fetch media data using our custom query (pybirdbuddy misses this)
+        postcard_media_map = await self._fetch_feed_with_postcard_media()
 
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
@@ -154,10 +189,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
             # For NewPostcard items without media, try to fetch media
             if item_type == "FeedItemNewPostcard" and not has_medias:
-                # First try our custom query to get postcard media directly
-                postcard_data = await self._fetch_postcard_media(item_id)
-                if postcard_data:
-                    # Extract media from postcard
+                # First check if our custom query got media for this item
+                if item_id in postcard_media_map:
+                    postcard_data = postcard_media_map[item_id]
                     medias = []
                     if postcard_data.get("coverMedia"):
                         cover = postcard_data["coverMedia"]
@@ -201,7 +235,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                             try:
                                 collected = await self.client.finish_postcard(
                                     feed_item_id=item_id,
-                                    sighting_report=sighting,
+                                    sighting_result=sighting,
                                 )
                                 LOGGER.warning("Auto-collected postcard %s: %s", item_id, collected)
                             except Exception as collect_exc:
