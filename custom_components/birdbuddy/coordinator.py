@@ -36,26 +36,28 @@ query IntrospectNewPostcard {
 }
 """
 
-# Custom GraphQL query to get postcards with all available fields
-FEED_WITH_ALL_FIELDS_QUERY = """
-query GetFeedWithAllFields {
+# Custom GraphQL query to get postcards with medias
+# FeedItemNewPostcard HAS a medias field, pybirdbuddy just doesn't request it!
+FEED_WITH_MEDIAS_QUERY = """
+query GetFeedWithMedias {
     me {
-        feed(first: 20) {
+        feed(first: 50) {
             edges {
                 node {
                     ... on FeedItemNewPostcard {
                         id
                         createdAt
                         __typename
-                        coverMedia {
-                            id
-                            thumbnailUrl
-                            contentUrl
-                        }
                         medias {
                             id
                             thumbnailUrl
                             contentUrl
+                        }
+                        mediaSpeciesAssignedName
+                        sightingReportPreview {
+                            species {
+                                name
+                            }
                         }
                     }
                     ... on FeedItemCollectedPostcard {
@@ -122,7 +124,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         try:
             LOGGER.warning("Fetching feed with all fields via custom query")
             result = await self.client._make_request(
-                query=FEED_WITH_ALL_FIELDS_QUERY,
+                query=FEED_WITH_MEDIAS_QUERY,
             )
             LOGGER.warning("Custom feed query result: %s", result)
 
@@ -134,13 +136,18 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                     if not item_id:
                         continue
 
-                    # Extract any media we find
-                    if node.get("coverMedia"):
-                        media_map[item_id] = {"coverMedia": node["coverMedia"]}
-                        LOGGER.warning("Found coverMedia for %s", item_id)
-                    elif node.get("medias"):
-                        media_map[item_id] = {"medias": node["medias"]}
-                        LOGGER.warning("Found medias for %s", item_id)
+                    # Extract media and species info
+                    if node.get("medias"):
+                        item_data = {"medias": node["medias"]}
+                        # Also get species name if available
+                        if node.get("mediaSpeciesAssignedName"):
+                            item_data["speciesName"] = node["mediaSpeciesAssignedName"]
+                        if node.get("sightingReportPreview") and node["sightingReportPreview"].get("species"):
+                            item_data["species"] = node["sightingReportPreview"]["species"]
+                        media_map[item_id] = item_data
+                        LOGGER.warning("Found %d medias for %s (species: %s)",
+                                      len(node["medias"]), item_id,
+                                      item_data.get("speciesName", "unknown"))
 
             LOGGER.warning("Media map has %d items with media", len(media_map))
         except Exception as exc:
