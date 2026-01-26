@@ -38,7 +38,7 @@ query IntrospectNewPostcard {
 
 # Custom GraphQL query to get postcards with medias
 # FeedItemNewPostcard HAS a medias field, pybirdbuddy just doesn't request it!
-# Media is an interface - need inline fragments for MediaImage/MediaVideo
+# Media is an interface - all fields must be queried via inline fragments
 FEED_WITH_MEDIAS_QUERY = """
 query GetFeedWithMedias {
     me {
@@ -50,12 +50,14 @@ query GetFeedWithMedias {
                         createdAt
                         __typename
                         medias {
-                            id
-                            thumbnailUrl
                             ... on MediaImage {
+                                id
+                                thumbnailUrl
                                 contentUrl
                             }
                             ... on MediaVideo {
+                                id
+                                thumbnailUrl
                                 contentUrl
                             }
                         }
@@ -71,12 +73,14 @@ query GetFeedWithMedias {
                         createdAt
                         __typename
                         medias {
-                            id
-                            thumbnailUrl
                             ... on MediaImage {
+                                id
+                                thumbnailUrl
                                 contentUrl
                             }
                             ... on MediaVideo {
+                                id
+                                thumbnailUrl
                                 contentUrl
                             }
                         }
