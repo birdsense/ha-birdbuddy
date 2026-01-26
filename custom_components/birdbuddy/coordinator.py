@@ -59,7 +59,6 @@ query GetFeedWithMedias {
                             ... on MediaVideo {
                                 id
                                 thumbnailUrl
-                                contentUrl
                             }
                         }
                         mediaSpeciesAssignedName
@@ -82,7 +81,6 @@ query GetFeedWithMedias {
                             ... on MediaVideo {
                                 id
                                 thumbnailUrl
-                                contentUrl
                             }
                         }
                     }
