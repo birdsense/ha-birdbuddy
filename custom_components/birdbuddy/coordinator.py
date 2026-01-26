@@ -16,10 +16,29 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import DOMAIN, EVENT_NEW_FEED_ITEM, LOGGER, POLLING_INTERVAL, CONF_LAST_FEED_ITEM_IDS
 
-# Custom GraphQL query to get postcards with media (pybirdbuddy doesn't request postcard field)
-# We fetch through me.feed and include the postcard field with its media
-FEED_WITH_POSTCARD_MEDIA_QUERY = """
-query GetFeedWithPostcardMedia {
+# GraphQL introspection query to discover FeedItemNewPostcard fields
+INTROSPECT_NEW_POSTCARD_QUERY = """
+query IntrospectNewPostcard {
+    __type(name: "FeedItemNewPostcard") {
+        name
+        fields {
+            name
+            type {
+                name
+                kind
+                ofType {
+                    name
+                    kind
+                }
+            }
+        }
+    }
+}
+"""
+
+# Custom GraphQL query to get postcards with all available fields
+FEED_WITH_ALL_FIELDS_QUERY = """
+query GetFeedWithAllFields {
     me {
         feed(first: 20) {
             edges {
@@ -28,13 +47,15 @@ query GetFeedWithPostcardMedia {
                         id
                         createdAt
                         __typename
-                        postcard {
+                        coverMedia {
                             id
-                            coverMedia {
-                                id
-                                thumbnailUrl
-                                contentUrl
-                            }
+                            thumbnailUrl
+                            contentUrl
+                        }
+                        medias {
+                            id
+                            thumbnailUrl
+                            contentUrl
                         }
                     }
                     ... on FeedItemCollectedPostcard {
@@ -80,15 +101,28 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
     async def _fetch_feed_with_postcard_media(self) -> dict:
         """Fetch feed with postcard media using custom GraphQL query.
 
-        pybirdbuddy doesn't request the 'postcard' field which contains media.
-        This method makes a direct GraphQL call to get that data for all items.
-        Returns a dict mapping feed item ID to its postcard/media data.
+        Returns a dict mapping feed item ID to its media data.
         """
         media_map = {}
+
+        # First, introspect the schema to see what fields are available
         try:
-            LOGGER.warning("Fetching feed with postcard media via custom query")
+            LOGGER.warning("Introspecting FeedItemNewPostcard schema...")
+            schema_result = await self.client._make_request(
+                query=INTROSPECT_NEW_POSTCARD_QUERY,
+            )
+            if schema_result and "__type" in schema_result:
+                fields = schema_result["__type"].get("fields", [])
+                field_names = [f["name"] for f in fields]
+                LOGGER.warning("FeedItemNewPostcard has fields: %s", field_names)
+        except Exception as exc:
+            LOGGER.warning("Schema introspection failed: %s", exc)
+
+        # Now try to fetch feed with media fields
+        try:
+            LOGGER.warning("Fetching feed with all fields via custom query")
             result = await self.client._make_request(
-                query=FEED_WITH_POSTCARD_MEDIA_QUERY,
+                query=FEED_WITH_ALL_FIELDS_QUERY,
             )
             LOGGER.warning("Custom feed query result: %s", result)
 
@@ -100,24 +134,17 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                     if not item_id:
                         continue
 
-                    # For NewPostcard, extract postcard.coverMedia
-                    if node.get("__typename") == "FeedItemNewPostcard" and "postcard" in node:
-                        postcard = node["postcard"]
-                        if postcard and postcard.get("coverMedia"):
-                            media_map[item_id] = {
-                                "coverMedia": postcard["coverMedia"]
-                            }
-                            LOGGER.warning("Found coverMedia for %s: %s", item_id, postcard["coverMedia"])
-
-                    # For CollectedPostcard, extract medias
-                    elif node.get("__typename") == "FeedItemCollectedPostcard" and "medias" in node:
-                        media_map[item_id] = {
-                            "medias": node["medias"]
-                        }
+                    # Extract any media we find
+                    if node.get("coverMedia"):
+                        media_map[item_id] = {"coverMedia": node["coverMedia"]}
+                        LOGGER.warning("Found coverMedia for %s", item_id)
+                    elif node.get("medias"):
+                        media_map[item_id] = {"medias": node["medias"]}
+                        LOGGER.warning("Found medias for %s", item_id)
 
             LOGGER.warning("Media map has %d items with media", len(media_map))
         except Exception as exc:
-            LOGGER.warning("Failed to fetch feed with postcard media: %s", exc)
+            LOGGER.warning("Failed to fetch feed with media: %s", exc)
 
         return media_map
 
