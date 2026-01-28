@@ -96,7 +96,8 @@ class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle a options flow for Bird Buddy."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        super().__init__()
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -106,7 +107,7 @@ class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         # Get current polling interval from options or use default
-        current_interval = self.config_entry.options.get(
+        current_interval = self._config_entry.options.get(
             CONF_POLLING_INTERVAL,
             DEFAULT_POLLING_INTERVAL
         )
