@@ -38,6 +38,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._client = None
         super().__init__()
 
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Get the options flow for this handler."""
+        return BirdBuddyOptionsFlowHandler(config_entry)
+
 
 class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle a options flow for Bird Buddy."""
@@ -52,15 +59,18 @@ class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        # Get current polling interval from options or use default
+        current_interval = self.config_entry.options.get(
+            CONF_POLLING_INTERVAL,
+            DEFAULT_POLLING_INTERVAL
+        )
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
                 vol.Required(
                     CONF_POLLING_INTERVAL,
-                    default=self.config_entry.options.get(
-                        CONF_POLLING_INTERVAL,
-                        DEFAULT_POLLING_INTERVAL
-                    )
+                    default=current_interval
                 ): vol.All(
                     vol.Coerce(int),
                     vol.Range(min=MIN_POLLING_INTERVAL, max=MAX_POLLING_INTERVAL)
@@ -69,7 +79,7 @@ class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders={
                 "min": MIN_POLLING_INTERVAL,
                 "max": MAX_POLLING_INTERVAL,
-                "default": DEFAULT_POLLING_INTERVAL
+                "current": current_interval
             }
         )
 

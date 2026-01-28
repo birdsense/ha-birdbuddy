@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from birdbuddy.client import BirdBuddy
 
 from homeassistant.config_entries import ConfigEntry
@@ -72,6 +73,22 @@ async def async_setup_entry(
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options."""
+    # Get the current coordinator
+    coordinator = hass.data[DOMAIN].get(entry.entry_id)
+    if coordinator:
+        # Update the coordinator's polling interval
+        polling_minutes = (
+            entry.options.get(CONF_POLLING_INTERVAL)
+            or entry.data.get(CONF_POLLING_INTERVAL)
+            or DEFAULT_POLLING_INTERVAL
+        )
+        coordinator.update_interval = timedelta(minutes=polling_minutes)
+        LOGGER.warning("Updated polling interval to %d minutes", polling_minutes)
+        
+        # Force immediate refresh with new interval
+        await coordinator.async_request_refresh()
+    
+    # Reload the entry to ensure all changes are applied
     await hass.config_entries.async_reload(entry.entry_id)
 
 
