@@ -12,7 +12,13 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_EMAIL
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_POLLING_INTERVAL,
+    DEFAULT_POLLING_INTERVAL,
+    MIN_POLLING_INTERVAL,
+    MAX_POLLING_INTERVAL,
+)
 
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -31,6 +37,41 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self):
         self._client = None
         super().__init__()
+
+
+class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle a options flow for Bird Buddy."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the options flow."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_POLLING_INTERVAL,
+                    default=self.config_entry.options.get(
+                        CONF_POLLING_INTERVAL,
+                        DEFAULT_POLLING_INTERVAL
+                    )
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_POLLING_INTERVAL, max=MAX_POLLING_INTERVAL)
+                )
+            }),
+            description_placeholders={
+                "min": MIN_POLLING_INTERVAL,
+                "max": MAX_POLLING_INTERVAL,
+                "default": DEFAULT_POLLING_INTERVAL
+            }
+        )
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None

@@ -14,7 +14,15 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN, EVENT_NEW_FEED_ITEM, LOGGER, POLLING_INTERVAL, CONF_LAST_FEED_ITEM_IDS
+from .const import (
+    DOMAIN,
+    EVENT_NEW_FEED_ITEM,
+    LOGGER,
+    POLLING_INTERVAL,
+    CONF_LAST_FEED_ITEM_IDS,
+    CONF_POLLING_INTERVAL,
+    DEFAULT_POLLING_INTERVAL,
+)
 
 # GraphQL introspection query to discover FeedItemNewPostcard fields
 INTROSPECT_NEW_POSTCARD_QUERY = """
@@ -116,11 +124,19 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         """Initialize the BirdBuddy data coordinator."""
         self.client = client
         self.last_update_timestamp = None
+        
+        # Get polling interval from config entry options, with fallback to defaults
+        polling_minutes = (
+            entry.options.get(CONF_POLLING_INTERVAL)
+            or entry.data.get(CONF_POLLING_INTERVAL)
+            or DEFAULT_POLLING_INTERVAL
+        )
+        
         super().__init__(
             hass,
             LOGGER,
             name=DOMAIN,
-            update_interval=POLLING_INTERVAL,
+            update_interval=timedelta(minutes=polling_minutes),
         )
 
     async def _fetch_feed_with_postcard_media(self) -> dict:

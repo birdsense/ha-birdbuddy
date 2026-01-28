@@ -7,8 +7,14 @@ DOMAIN = "birdbuddy"
 LOGGER = logging.getLogger(__package__)
 MANUFACTURER = "Bird Buddy, Inc."
 
-# Default polling interval.
-POLLING_INTERVAL = timedelta(minutes=10)
+# Polling interval configuration
+CONF_POLLING_INTERVAL = "polling_interval"
+DEFAULT_POLLING_INTERVAL = 10  # minutes
+MIN_POLLING_INTERVAL = 1       # minutes
+MAX_POLLING_INTERVAL = 20      # minutes
+
+# Default polling interval (used as fallback).
+POLLING_INTERVAL = timedelta(minutes=DEFAULT_POLLING_INTERVAL)
 
 # Events
 EVENT_NEW_FEED_ITEM = f"{DOMAIN}_new_feed_item"

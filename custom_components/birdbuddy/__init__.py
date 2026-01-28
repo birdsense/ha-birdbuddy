@@ -15,6 +15,8 @@ from .const import (
     DOMAIN,
     LOGGER,
     CONF_RESET_FEED_STORAGE,
+    CONF_POLLING_INTERVAL,
+    DEFAULT_POLLING_INTERVAL,
 )
 from .coordinator import BirdBuddyDataUpdateCoordinator
 
@@ -42,11 +44,14 @@ async def async_setup_entry(
     hass.data.setdefault(DOMAIN, {})
 
     # Register services if not already registered
-    if not hass.services.has_service(DOMAIN, "refresh_feed"):
+    if not hass.services.has_service(DOMAIN, "reset_feed_storage"):
         LOGGER.warning("Registering Bird Buddy services...")
         _setup_services(hass)
     else:
         LOGGER.warning("Bird Buddy services already registered")
+
+    # Set up options flow
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     client = BirdBuddy(entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD])
     client.language_code = hass.config.language
@@ -63,6 +68,11 @@ async def async_setup_entry(
     )
 
     return True
+
+
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update options."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(
