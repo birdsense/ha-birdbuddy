@@ -126,6 +126,9 @@ class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders={
                 "min": MIN_POLLING_INTERVAL,
                 "max": MAX_POLLING_INTERVAL,
-                "current": current_interval
-            }
+                "current": current_interval,
+                "default": DEFAULT_POLLING_INTERVAL
+            },
+            description="Adjust how frequently Bird Buddy checks for new feed items. "
+            "Lower values provide faster updates but increase API usage."
         )

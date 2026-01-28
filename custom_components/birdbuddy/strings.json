@@ -14,9 +14,23 @@
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
-    "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+  "abort": {
+    "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Bird Buddy Polling Settings",
+        "description": "Adjust how frequently Bird Buddy checks for new feed items. Lower values provide faster updates but increase API usage."
+      }
+    },
+    "data": {
+      "polling_interval": {
+        "name": "Feed Polling Interval",
+        "description": "Minutes between feed updates (1-20 minutes)"
+      }
     }
+  }
   },
   "entity": {
     "select": {
