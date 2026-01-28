@@ -38,51 +38,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._client = None
         super().__init__()
 
-    @staticmethod
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> config_entries.OptionsFlow:
-        """Get the options flow for this handler."""
-        return BirdBuddyOptionsFlowHandler(config_entry)
-
-
-class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle a options flow for Bird Buddy."""
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the options flow."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
-        # Get current polling interval from options or use default
-        current_interval = self.config_entry.options.get(
-            CONF_POLLING_INTERVAL,
-            DEFAULT_POLLING_INTERVAL
-        )
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({
-                vol.Required(
-                    CONF_POLLING_INTERVAL,
-                    default=current_interval
-                ): vol.All(
-                    vol.Coerce(int),
-                    vol.Range(min=MIN_POLLING_INTERVAL, max=MAX_POLLING_INTERVAL)
-                )
-            }),
-            description_placeholders={
-                "min": MIN_POLLING_INTERVAL,
-                "max": MAX_POLLING_INTERVAL,
-                "current": current_interval
-            }
-        )
-
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -128,3 +83,48 @@ class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
         return {
             "title": self._client.user.name,
         }
+
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Get the options flow for this handler."""
+        return BirdBuddyOptionsFlowHandler(config_entry)
+
+
+class BirdBuddyOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle a options flow for Bird Buddy."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the options flow."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        # Get current polling interval from options or use default
+        current_interval = self.config_entry.options.get(
+            CONF_POLLING_INTERVAL,
+            DEFAULT_POLLING_INTERVAL
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_POLLING_INTERVAL,
+                    default=current_interval
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_POLLING_INTERVAL, max=MAX_POLLING_INTERVAL)
+                )
+            }),
+            description_placeholders={
+                "min": MIN_POLLING_INTERVAL,
+                "max": MAX_POLLING_INTERVAL,
+                "current": current_interval
+            }
+        )
