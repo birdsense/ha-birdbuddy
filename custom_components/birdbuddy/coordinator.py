@@ -24,39 +24,8 @@ from .const import (
     DEFAULT_POLLING_INTERVAL,
 )
 
-# GraphQL introspection query to discover FeedItemNewPostcard fields
-INTROSPECT_NEW_POSTCARD_QUERY = """
-query IntrospectNewPostcard {
-    __type(name: "FeedItemNewPostcard") {
-        name
-        fields {
-            name
-            type {
-                name
-                kind
-                ofType {
-                    name
-                    kind
-                }
-            }
-        }
-    }
-}
-"""
-
-# GraphQL introspection query to discover MediaImageSize enum values
-INTROSPECT_MEDIA_IMAGE_SIZE_QUERY = """
-query IntrospectMediaImageSize {
-    __type(name: "MediaImageSize") {
-        name
-        enumValues {
-            name
-        }
-    }
-}
-"""
-
 # Custom GraphQL query to get postcards with medias
+# pybirdbuddy doesn't request the medias field, but it exists!
 # FeedItemNewPostcard HAS a medias field, pybirdbuddy just doesn't request it!
 # Media is an interface - all fields must be queried via inline fragments
 # contentUrl requires size argument (MediaImageSize enum)
@@ -80,9 +49,6 @@ query GetFeedWithMedias {
                                 id
                                 thumbnailUrl
                             }
-                        }
-                        mediaSpeciesAssignedName {
-                            name
                         }
                     }
                     ... on FeedItemCollectedPostcard {
@@ -146,38 +112,10 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         """
         media_map = {}
 
-        # First, introspect the schema to see what fields are available
         try:
-            LOGGER.warning("Introspecting FeedItemNewPostcard schema...")
-            schema_result = await self.client._make_request(
-                query=INTROSPECT_NEW_POSTCARD_QUERY,
-            )
-            if schema_result and "__type" in schema_result:
-                fields = schema_result["__type"].get("fields", [])
-                field_names = [f["name"] for f in fields]
-                LOGGER.warning("FeedItemNewPostcard has fields: %s", field_names)
-        except Exception as exc:
-            LOGGER.warning("Schema introspection failed: %s", exc)
-
-        # Introspect MediaImageSize enum to see valid values
-        try:
-            enum_result = await self.client._make_request(
-                query=INTROSPECT_MEDIA_IMAGE_SIZE_QUERY,
-            )
-            if enum_result and "__type" in enum_result:
-                enum_values = enum_result["__type"].get("enumValues", [])
-                value_names = [v["name"] for v in enum_values]
-                LOGGER.warning("MediaImageSize enum values: %s", value_names)
-        except Exception as exc:
-            LOGGER.warning("MediaImageSize introspection failed: %s", exc)
-
-        # Now try to fetch feed with media fields
-        try:
-            LOGGER.warning("Fetching feed with all fields via custom query")
             result = await self.client._make_request(
                 query=FEED_WITH_MEDIAS_QUERY,
             )
-            LOGGER.warning("Custom feed query result: %s", result)
 
             if result and "me" in result and "feed" in result["me"]:
                 edges = result["me"]["feed"].get("edges", [])
@@ -187,18 +125,12 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                     if not item_id:
                         continue
 
-                    # Extract media and species info
+                    # Extract media info
                     if node.get("medias"):
-                        item_data = {"medias": node["medias"]}
-                        # Also get species name if available
-                        if node.get("mediaSpeciesAssignedName"):
-                            item_data["speciesName"] = node["mediaSpeciesAssignedName"].get("name")
-                        media_map[item_id] = item_data
-                        LOGGER.warning("Found %d medias for %s (species: %s)",
-                                      len(node["medias"]), item_id,
-                                      item_data.get("speciesName", "unknown"))
+                        media_map[item_id] = {"medias": node["medias"]}
+                        LOGGER.debug("Found %d medias for %s", len(node["medias"]), item_id)
 
-            LOGGER.warning("Media map has %d items with media", len(media_map))
+            LOGGER.debug("Media map has %d items with media", len(media_map))
         except Exception as exc:
             LOGGER.warning("Failed to fetch feed with media: %s", exc)
 
@@ -223,11 +155,11 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             new_postcard_ids: Set of IDs from new_postcards() that are truly uncollected
         """
         if not feed:
-            LOGGER.warning("_process_feed: No feed items to process")
+            LOGGER.debug("_process_feed: No feed items to process")
             return
 
         new_postcard_ids = new_postcard_ids or set()
-        LOGGER.warning("_process_feed: Processing %d feed items, %d are truly new postcards",
+        LOGGER.debug("_process_feed: Processing %d feed items, %d are truly new postcards",
                       len(feed), len(new_postcard_ids))
 
         # Fetch media data using our custom query (pybirdbuddy misses this)
@@ -235,7 +167,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
-        LOGGER.warning("_process_feed: Already processed %d items", len(processed_ids))
+        LOGGER.debug("_process_feed: Already processed %d items", len(processed_ids))
         new_ids = set()
 
         for item in feed:
@@ -261,44 +193,26 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if item_id in processed_ids:
                 continue
 
-            LOGGER.warning("NEW feed item: %s (type: %s)", item_id, item_type)
+            LOGGER.debug("NEW feed item: %s (type: %s)", item_id, item_type)
 
             # Check if we already have media from the feed data (CollectedPostcard has media)
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
 
             if has_medias:
-                LOGGER.warning("Item %s already has %d medias from feed",
+                LOGGER.debug("Item %s already has %d medias from feed",
                               item_id, len(item_data.get("medias", [])))
 
-            # For NewPostcard items without media, try to fetch media
+            # For NewPostcard items without media, fetch from our custom query
             if item_type == "FeedItemNewPostcard" and not has_medias:
-                # First check if our custom query got media for this item
                 if item_id in postcard_media_map:
                     postcard_data = postcard_media_map[item_id]
-                    medias = []
-                    if postcard_data.get("coverMedia"):
-                        cover = postcard_data["coverMedia"]
-                        medias.append({
-                            "id": cover.get("id"),
-                            "contentUrl": cover.get("contentUrl"),
-                            "thumbnailUrl": cover.get("thumbnailUrl"),
-                            "__typename": "MediaImage",
-                        })
                     if postcard_data.get("medias"):
-                        for media in postcard_data["medias"]:
-                            medias.append({
-                                "id": media.get("id"),
-                                "contentUrl": media.get("contentUrl"),
-                                "thumbnailUrl": media.get("thumbnailUrl"),
-                                "__typename": "MediaImage",
-                            })
-                    if medias:
-                        item_data["medias"] = medias
-                        LOGGER.warning("Got %d medias from custom postcard query", len(medias))
+                        item_data["medias"] = postcard_data["medias"]
+                        LOGGER.debug("Got %d medias from custom query", len(postcard_data["medias"]))
 
                 # If custom query didn't get media and it's truly new, try sighting API
                 if not item_data.get("medias") and item_id in new_postcard_ids:
-                    LOGGER.warning("Trying sighting_from_postcard for: %s", item_id)
+                    LOGGER.debug("Trying sighting_from_postcard for: %s", item_id)
                     try:
                         sighting = await self.client.sighting_from_postcard(item)
                         if sighting:
@@ -312,7 +226,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                 })
                             if medias:
                                 item_data["medias"] = medias
-                                LOGGER.warning("Added %d medias from sighting", len(medias))
+                                LOGGER.debug("Added %d medias from sighting", len(medias))
 
                             # Auto-collect the postcard
                             try:
@@ -320,23 +234,42 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                     feed_item_id=item_id,
                                     sighting_result=sighting,
                                 )
-                                LOGGER.warning("Auto-collected postcard %s: %s", item_id, collected)
+                                LOGGER.debug("Auto-collected postcard %s: %s", item_id, collected)
                             except Exception as collect_exc:
-                                LOGGER.warning("Failed to auto-collect %s: %s", item_id, collect_exc)
+                                LOGGER.debug("Failed to auto-collect %s: %s", item_id, collect_exc)
                     except Exception as exc:
-                        LOGGER.warning("sighting_from_postcard failed for %s: %s", item_id, exc)
+                        LOGGER.debug("sighting_from_postcard failed for %s: %s", item_id, exc)
 
-            # Fire event with complete feed item data
+            # Build event data with easy-to-use media fields
+            medias = item_data.get("medias", [])
+            media_count = len(medias)
+
+            # Pick the best image (last one is usually sharpest in burst mode)
+            best_media = medias[-1] if medias else None
+            media_url = best_media.get("contentUrl") if best_media else None
+            thumbnail_url = best_media.get("thumbnailUrl") if best_media else None
+
+            # Also collect all media URLs for flexibility
+            all_media_urls = [m.get("contentUrl") for m in medias if m.get("contentUrl")]
+            all_thumbnail_urls = [m.get("thumbnailUrl") for m in medias if m.get("thumbnailUrl")]
+
             event_data = {
                 "item_id": item_id,
-                "item_data": item_data,
-                "created_at": created_at,
                 "type": item_type,
+                "created_at": created_at,
+                # Easy access to best media (last image is usually sharpest)
+                "media_url": media_url,
+                "thumbnail_url": thumbnail_url,
+                # Metadata
+                "media_count": media_count,
+                "has_media": media_count > 0,
+                # All media for advanced use (index 0 = first/blurry, index -1 = last/sharp)
+                "all_media_urls": all_media_urls,
+                "all_thumbnail_urls": all_thumbnail_urls,
             }
 
-            has_medias_now = "medias" in item_data and len(item_data.get("medias", [])) > 0
-            LOGGER.warning("FIRING EVENT for %s - type: %s, has_medias: %s",
-                          item_id, item_type, has_medias_now)
+            LOGGER.info("FIRING EVENT for %s - type: %s, has_media: %s, media_count: %d",
+                          item_id, item_type, media_count > 0, media_count)
 
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
@@ -383,7 +316,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             # Don't mark entities unavailable for temporary API errors (502, 503, etc)
             error_str = str(exc)
             if "502" in error_str or "503" in error_str or "504" in error_str:
-                LOGGER.warning("Bird Buddy API temporarily unavailable: %s", exc)
+                LOGGER.debug("Bird Buddy API temporarily unavailable: %s", exc)
                 # Return existing client data without raising - entities stay available
                 return self.client
             LOGGER.error("Failed to fetch Bird Buddy feed: %s", exc)
@@ -398,27 +331,27 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
         new_data = dict(self.config_entry.data)
         new_data[CONF_LAST_FEED_ITEM_IDS] = []
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-        LOGGER.warning("Feed storage reset - cleared %d items, all will be processed as new", old_count)
+        LOGGER.debug("Feed storage reset - cleared %d items, all will be processed as new", old_count)
 
     async def force_refresh_now(self) -> None:
         """Force immediate feed refresh and processing."""
-        LOGGER.warning("=== FORCE REFRESH START ===")
+        LOGGER.debug("=== FORCE REFRESH START ===")
         try:
-            LOGGER.warning("Calling client.refresh()...")
+            LOGGER.debug("Calling client.refresh()...")
             await self.client.refresh()
-            LOGGER.warning("client.refresh() completed")
+            LOGGER.debug("client.refresh() completed")
 
             # Get truly uncollected postcards - process these directly!
-            LOGGER.warning("Calling client.new_postcards()...")
+            LOGGER.debug("Calling client.new_postcards()...")
             new_postcards = await self.client.new_postcards()
-            LOGGER.warning("new_postcards() returned %d items", len(new_postcards) if new_postcards else 0)
+            LOGGER.debug("new_postcards() returned %d items", len(new_postcards) if new_postcards else 0)
 
             # Log detailed info about each new postcard
             for pc in new_postcards:
                 pc_id = pc.get("id") if hasattr(pc, 'get') else "unknown"
                 pc_data = dict(pc.data) if hasattr(pc, 'data') else {}
-                LOGGER.warning("New postcard %s - all data keys: %s", pc_id, list(pc_data.keys()))
-                LOGGER.warning("New postcard %s - full data: %s", pc_id, pc_data)
+                LOGGER.debug("New postcard %s - all data keys: %s", pc_id, list(pc_data.keys()))
+                LOGGER.debug("New postcard %s - full data: %s", pc_id, pc_data)
 
             # Process new_postcards directly (they are the source of truth)
             new_postcard_ids = set()
@@ -432,7 +365,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             # Also get refresh_feed for collected postcards (these have media)
             since_time = datetime.now(timezone.utc) - timedelta(hours=24)
             feed = await self.client.refresh_feed(since=since_time)
-            LOGGER.warning("refresh_feed returned: %d items", len(feed) if feed else 0)
+            LOGGER.debug("refresh_feed returned: %d items", len(feed) if feed else 0)
 
             # Combine: use new_postcards as primary, add any collected from feed
             combined_feed = list(new_postcards)  # Start with new postcards
@@ -446,7 +379,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                         combined_feed.append(item)
                         feed_ids.add(item_id)
 
-            LOGGER.warning("Combined feed: %d total items", len(combined_feed))
+            LOGGER.debug("Combined feed: %d total items", len(combined_feed))
             await self._process_feed(combined_feed, new_postcard_ids)
 
             # Update timestamp
