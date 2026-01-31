@@ -4,26 +4,28 @@
 
 ## 🔥 Key Features
 
-- ✅ **Feed monitoring**: Fetches Bird Buddy feed every 10 minutes
+- ✅ **Feed monitoring**: Fetches Bird Buddy feed (configurable 1-20 min interval)
+- ✅ **Direct media access**: Gets image URLs directly without needing Bird Buddy app
+- ✅ **Smart image selection**: Automatically picks sharpest image from burst mode
 - ✅ **Duplicate prevention**: Persistent storage prevents processing the same items twice
-- ✅ **Event triggering**: Fires `birdbuddy_new_feed_item` events for new feed items
+- ✅ **Event triggering**: Fires `birdbuddy_new_feed_item` events with media URLs
 - ✅ **Minimal footprint**: Basic status entities only, no complex device management
-- ✅ **Reliable**: Avoids postcard processing issues that affect the full integration
 
 ## 🎯 What This Version Does
 
-This stripped integration focuses on one thing: **getting feed data and triggering events**. 
+This integration focuses on one thing: **getting bird photos and triggering events automatically**.
 
-When a new item appears in your Bird Buddy feed, it fires a Home Assistant event containing:
-- Item ID and type (e.g., `FeedItemNewPostcard`, `FeedItemCollectedPostcard`)
-- Creation timestamp
-- Complete feed item data (including media URLs, species info, etc.)
+When a bird visits your feeder, it fires a Home Assistant event containing:
+- Direct image URLs (no need to open Bird Buddy app!)
+- Automatic selection of the sharpest image from burst mode
+- All burst images available for advanced use
+- Item metadata (ID, type, timestamp)
 
 You can then use these events in automations to:
-- Send notifications
-- Download images/videos
+- Send notifications with bird photos
+- Download images automatically
+- Process with local AI for species identification
 - Trigger other integrations
-- Process data however you want
 
 ## 🚫 What This Version Doesn't Do
 
@@ -89,127 +91,116 @@ These entities provide quick verification that the integration is working and pr
 This event is fired for **every new feed item**, regardless of type.
 
 **Event Data Structure:**
-```json
-{
-  "item_id": "7f9e310f-53ce-4f94-ab6b-460c5c93d78f",
-  "item_data": { /* complete feed item data */ },
-  "created_at": "2026-01-24T07:27:38.416Z",
-  "type": "FeedItemNewPostcard"
-}
+```yaml
+event_data:
+  item_id: "7f9e310f-53ce-4f94-ab6b-460c5c93d78f"
+  type: "FeedItemNewPostcard"
+  created_at: "2026-01-24T07:27:38.416Z"
+
+  # Easy access to best media (last image from burst = sharpest)
+  has_media: true
+  media_count: 4
+  media_url: "https://media.app-api-graphql..."      # Best quality image URL
+  thumbnail_url: "https://media.app-api-graphql..."  # Thumbnail of best image
+
+  # All media for advanced use (index 0 = first/blurry, index -1 = last/sharp)
+  all_media_urls: ["https://...", "https://...", ...]
+  all_thumbnail_urls: ["https://...", "https://...", ...]
 ```
 
 **Common Item Types:**
-- `FeedItemNewPostcard`: New postcard detected (contains unprocessed images/species data)
-- `FeedItemCollectedPostcard`: Postcard already processed/collected in Bird Buddy app
+- `FeedItemNewPostcard`: New postcard detected (contains images from bird visit)
+- `FeedItemCollectedPostcard`: Postcard already collected in Bird Buddy app
 - `FeedItemFeederInvitationAccepted`: Feeder invitation accepted
 - `FeedItemSpeciesUnlocked`: New species unlocked
 
-**Important**: This integration does NOT process or collect postcards - it only monitors when they appear in the feed and provides event data. Use the included automations to automatically download images and handle feed content.
+**Media Note**: Bird Buddy captures multiple images in burst mode. The first image is often blurry while later ones are sharper. The `media_url` field automatically selects the last (sharpest) image. Use `all_media_urls` if you want to access all images.
 
 ## Example Automations
 
-### Basic Notification
+### Basic Notification with Image
 
 ```yaml
 automation:
-  - alias: "Bird Buddy - New Feed Item"
-    description: "Notifies when new Bird Buddy feed item is detected"
-    trigger:
-      - platform: event
-        event_type: birdbuddy_new_feed_item
-    action:
-      - service: notify.notify
-        data:
-          message: "New Bird Buddy feed item: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
-          title: "Bird Buddy Feed Update"
-      - service: logbook.log
-        data:
-          name: "Bird Buddy Feed"
-          message: "Item {{ trigger.event.data.item_id }}: {{ trigger.event.data.type }} at {{ trigger.event.data.created_at }}"
-```
-
-### Process Feed Item Images
-
-```yaml
-automation:
-  - alias: "Bird Buddy - New Feed Item"
-    description: "Notifies with direct image URL from feed items"
-    mode: parallel  # Prevents "Already running" for multiple events
-    trigger:
-      - platform: event
-        event_type: birdbuddy_new_feed_item
-    condition:
-      - condition: template
-        value_template: >-
-          {{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] 
-             and trigger.event.data.item_data.medias is defined 
-             and trigger.event.data.item_data.medias | length > 0 }}
-    action:
-      - service: notify.notify
-        data:
-          message: "New Bird Buddy image: {{ trigger.event.data.item_id }} ({{ trigger.event.data.type }})"
-          title: "Bird Buddy Feed Update"
-          image: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
-```
-
-This automation provides two options:
-
-**Important**: Copy this exactly from `example_automation.yaml` - the indentation and formatting must match exactly. Manual copying may introduce indentation errors.
-
-**Option 1**: URL in notification message (always works)
-**Option 2**: Image key in data (may not work with all apps)
-
-Some notification apps reject custom data keys like `image`. Option 1 puts the URL directly in the message text, which works with all apps. Option 2 tries the `image` key but may fail on some platforms.
-
-### Process Feed Images Automatically
-
-```yaml
-automation:
-  - alias: "Bird Buddy - Process Feed Images"
-    description: "Downloads and processes images from new feed items"
+  - alias: "Bird Buddy - New Bird Notification"
+    description: "Sends notification with bird image when detected"
     mode: parallel
     trigger:
       - platform: event
         event_type: birdbuddy_new_feed_item
     condition:
       - condition: template
-        value_template: >-
-          {{ trigger.event.data.type in ['FeedItemNewPostcard', 'FeedItemCollectedPostcard'] 
-             and trigger.event.data.item_data.medias is defined 
-             and trigger.event.data.item_data.medias | length > 0 }}
+        value_template: "{{ trigger.event.data.has_media }}"
     action:
-      - service: downloader.download_file
+      - service: notify.mobile_app_your_phone
         data:
-          url: "{{ trigger.event.data.item_data.medias[0].contentUrl }}"
-          filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
-          overwrite: true
-      - service: notify.notify
-        data:
-          message: "Bird Buddy image downloaded: {{ trigger.event.data.item_id }}"
-          title: "Bird Buddy Image"
+          title: "Vogel gespot!"
+          message: "{{ trigger.event.data.media_count }} foto's gemaakt"
           data:
-            image: "/local/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+            image: "{{ trigger.event.data.media_url }}"
 ```
 
-### Process Specific Bird Types
+### Download Best Image
 
 ```yaml
 automation:
-  - alias: "Bird Buddy - Special Bird Detected"
-    description: "Special handling for specific bird species"
+  - alias: "Bird Buddy - Download Images"
+    description: "Downloads the sharpest image from each bird visit"
+    mode: parallel
     trigger:
       - platform: event
         event_type: birdbuddy_new_feed_item
     condition:
       - condition: template
-        value_template: >-
-          {{ trigger.event.data.type == 'FeedItemCollectedPostcard' 
-             and 'Great Tit' in (trigger.event.data.item_data.species | map(attribute='name') | list) }}
+        value_template: "{{ trigger.event.data.has_media }}"
     action:
-      - service: notify.mobile_app
+      - service: downloader.download_file
         data:
-          message: "Great Tit detected! Check your Bird Buddy app."
-          title: "Special Bird Alert"
+          url: "{{ trigger.event.data.media_url }}"
+          filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}.jpg"
+          overwrite: true
+```
+
+### Download All Images from Burst
+
+```yaml
+automation:
+  - alias: "Bird Buddy - Download All Burst Images"
+    description: "Downloads all images from burst mode"
+    mode: parallel
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    condition:
+      - condition: template
+        value_template: "{{ trigger.event.data.has_media }}"
+    action:
+      - repeat:
+          count: "{{ trigger.event.data.media_count }}"
+          sequence:
+            - service: downloader.download_file
+              data:
+                url: "{{ trigger.event.data.all_media_urls[repeat.index - 1] }}"
+                filename: "/config/www/birdbuddy/{{ trigger.event.data.item_id }}_{{ repeat.index }}.jpg"
+```
+
+### Log All Bird Visits
+
+```yaml
+automation:
+  - alias: "Bird Buddy - Log Visit"
+    description: "Logs all bird visits to logbook"
+    trigger:
+      - platform: event
+        event_type: birdbuddy_new_feed_item
+    action:
+      - service: logbook.log
+        data:
+          name: "Bird Buddy"
+          message: >-
+            {{ trigger.event.data.type }} -
+            {{ trigger.event.data.media_count }} photos
+            {% if trigger.event.data.has_media %}({{ trigger.event.data.media_url }}){% endif %}
 ```
 
 ## Feed Storage & Deduplication
