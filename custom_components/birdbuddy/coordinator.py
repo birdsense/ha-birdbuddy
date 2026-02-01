@@ -231,11 +231,19 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                           item_id, item_type, item_id in postcard_media_map)
 
             # Check if we already have media from the feed data
-            has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
+            existing_medias = item_data.get("medias", [])
+            has_medias = len(existing_medias) > 0
 
-            # For items without media, fetch from our custom query
+            # Debug: check if existing medias have contentUrl
+            if has_medias:
+                first_has_url = existing_medias[0].get("contentUrl") if existing_medias else None
+                LOGGER.warning("EXISTING_MEDIAS: %d medias, first has contentUrl: %s",
+                              len(existing_medias), bool(first_has_url))
+
+            # For items without media OR without contentUrl, use custom query
             # This works for both NewPostcard and CollectedPostcard
-            if not has_medias and item_id in postcard_media_map:
+            needs_custom_query = not has_medias or (has_medias and not existing_medias[0].get("contentUrl"))
+            if needs_custom_query and item_id in postcard_media_map:
                 postcard_data = postcard_media_map[item_id]
                 if postcard_data.get("medias"):
                     item_data["medias"] = postcard_data["medias"]
