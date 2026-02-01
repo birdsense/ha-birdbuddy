@@ -281,6 +281,11 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             medias = item_data.get("medias", [])
             media_count = len(medias)
 
+            # Debug: log what keys are in the media objects
+            if medias:
+                LOGGER.warning("MEDIA_DEBUG: first media keys: %s", list(medias[0].keys()))
+                LOGGER.warning("MEDIA_DEBUG: first media: %s", medias[0])
+
             # Pick the best image (last one is usually sharpest in burst mode)
             best_media = medias[-1] if medias else None
             media_url = best_media.get("contentUrl") if best_media else None
