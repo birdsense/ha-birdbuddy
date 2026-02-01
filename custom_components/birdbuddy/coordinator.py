@@ -158,6 +158,12 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
             # Get media URLs directly from the query result
             media_count = len(medias)
+
+            # Debug: log what's in the medias
+            if medias:
+                LOGGER.warning("MEDIA_KEYS for %s: %s", item_id, list(medias[0].keys()))
+                LOGGER.warning("FIRST_MEDIA for %s: %s", item_id, medias[0])
+
             best_media = medias[-1] if medias else None
             media_url = best_media.get("contentUrl") if best_media else None
             thumbnail_url = best_media.get("thumbnailUrl") if best_media else None
