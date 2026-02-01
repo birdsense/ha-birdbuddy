@@ -120,9 +120,27 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                     query=FEED_WITH_MEDIAS_QUERY,
                 )
 
+                # Debug: log raw result structure
+                if result:
+                    LOGGER.warning("CUSTOM_QUERY raw keys: %s", list(result.keys()))
+                    if "me" in result:
+                        LOGGER.warning("CUSTOM_QUERY me keys: %s", list(result["me"].keys()) if result["me"] else "None")
+                    if "errors" in result:
+                        LOGGER.warning("CUSTOM_QUERY errors: %s", result["errors"])
+                else:
+                    LOGGER.warning("CUSTOM_QUERY returned None/empty")
+
                 if result and "me" in result and "feed" in result["me"]:
                     edges = result["me"]["feed"].get("edges", [])
-                    LOGGER.info("Custom query: %d edges in feed", len(edges))
+                    LOGGER.warning("CUSTOM_QUERY: %d edges in feed", len(edges))
+
+                    # Debug first few edges
+                    for i, edge in enumerate(edges[:3]):
+                        node = edge.get("node", {})
+                        LOGGER.warning("CUSTOM_QUERY edge %d: typename=%s, id=%s, medias=%s",
+                                       i, node.get("__typename"), node.get("id"),
+                                       len(node.get("medias", [])) if node.get("medias") else "None")
+
                     for edge in edges:
                         node = edge.get("node", {})
                         item_id = node.get("id")
@@ -132,9 +150,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                         medias = node.get("medias", [])
                         if medias:
                             media_map[item_id] = {"medias": medias}
-                            LOGGER.debug("Edge %s: %d medias", item_id, len(medias))
 
-                    LOGGER.info("Media map has %d items with media", len(media_map))
+                    LOGGER.warning("CUSTOM_QUERY: media_map has %d items with media", len(media_map))
                     return media_map  # Success, return immediately
 
             except Exception as exc:
@@ -147,7 +164,7 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                                   attempt + 1, max_retries, wait_time, exc)
                     await asyncio.sleep(wait_time)
                 else:
-                    LOGGER.warning("Failed to fetch feed with media: %s", exc)
+                    LOGGER.warning("CUSTOM_QUERY failed: %s", exc)
                     break
 
         return media_map
