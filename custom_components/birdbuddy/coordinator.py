@@ -105,40 +105,50 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             update_interval=timedelta(minutes=polling_minutes),
         )
 
-    async def _fetch_feed_with_postcard_media(self) -> dict:
+    async def _fetch_feed_with_postcard_media(self, max_retries: int = 3) -> dict:
         """Fetch feed with postcard media using custom GraphQL query.
 
         Returns a dict mapping feed item ID to its media data.
+        Retries on temporary errors (502, 503, 504).
         """
+        import asyncio
         media_map = {}
 
-        try:
-            result = await self.client._make_request(
-                query=FEED_WITH_MEDIAS_QUERY,
-            )
-            LOGGER.info("Custom media query returned result: %s", result is not None)
+        for attempt in range(max_retries):
+            try:
+                result = await self.client._make_request(
+                    query=FEED_WITH_MEDIAS_QUERY,
+                )
 
-            if result and "me" in result and "feed" in result["me"]:
-                edges = result["me"]["feed"].get("edges", [])
-                LOGGER.info("Found %d edges in feed", len(edges))
-                for edge in edges:
-                    node = edge.get("node", {})
-                    item_id = node.get("id")
-                    node_type = node.get("__typename", "unknown")
-                    if not item_id:
-                        continue
+                if result and "me" in result and "feed" in result["me"]:
+                    edges = result["me"]["feed"].get("edges", [])
+                    LOGGER.info("Custom query: %d edges in feed", len(edges))
+                    for edge in edges:
+                        node = edge.get("node", {})
+                        item_id = node.get("id")
+                        if not item_id:
+                            continue
 
-                    # Extract media info
-                    medias = node.get("medias", [])
-                    LOGGER.info("Edge %s (%s): %d medias", item_id, node_type, len(medias))
-                    if medias:
-                        media_map[item_id] = {"medias": medias}
+                        medias = node.get("medias", [])
+                        if medias:
+                            media_map[item_id] = {"medias": medias}
+                            LOGGER.debug("Edge %s: %d medias", item_id, len(medias))
 
-            LOGGER.info("Media map has %d items with media", len(media_map))
-        except Exception as exc:
-            LOGGER.warning("Failed to fetch feed with media: %s", exc)
-            import traceback
-            LOGGER.warning("Traceback: %s", traceback.format_exc())
+                    LOGGER.info("Media map has %d items with media", len(media_map))
+                    return media_map  # Success, return immediately
+
+            except Exception as exc:
+                error_str = str(exc)
+                is_temporary = any(code in error_str for code in ["502", "503", "504"])
+
+                if is_temporary and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    LOGGER.warning("Temporary API error (attempt %d/%d), retrying in %ds: %s",
+                                  attempt + 1, max_retries, wait_time, exc)
+                    await asyncio.sleep(wait_time)
+                else:
+                    LOGGER.warning("Failed to fetch feed with media: %s", exc)
+                    break
 
         return media_map
 
