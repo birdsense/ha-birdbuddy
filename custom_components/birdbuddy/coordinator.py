@@ -116,23 +116,29 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             result = await self.client._make_request(
                 query=FEED_WITH_MEDIAS_QUERY,
             )
+            LOGGER.info("Custom media query returned result: %s", result is not None)
 
             if result and "me" in result and "feed" in result["me"]:
                 edges = result["me"]["feed"].get("edges", [])
+                LOGGER.info("Found %d edges in feed", len(edges))
                 for edge in edges:
                     node = edge.get("node", {})
                     item_id = node.get("id")
+                    node_type = node.get("__typename", "unknown")
                     if not item_id:
                         continue
 
                     # Extract media info
-                    if node.get("medias"):
-                        media_map[item_id] = {"medias": node["medias"]}
-                        LOGGER.debug("Found %d medias for %s", len(node["medias"]), item_id)
+                    medias = node.get("medias", [])
+                    LOGGER.info("Edge %s (%s): %d medias", item_id, node_type, len(medias))
+                    if medias:
+                        media_map[item_id] = {"medias": medias}
 
-            LOGGER.debug("Media map has %d items with media", len(media_map))
+            LOGGER.info("Media map has %d items with media", len(media_map))
         except Exception as exc:
             LOGGER.warning("Failed to fetch feed with media: %s", exc)
+            import traceback
+            LOGGER.warning("Traceback: %s", traceback.format_exc())
 
         return media_map
 
@@ -193,22 +199,24 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if item_id in processed_ids:
                 continue
 
-            LOGGER.debug("NEW feed item: %s (type: %s)", item_id, item_type)
+            LOGGER.info("NEW feed item: %s (type: %s)", item_id, item_type)
 
-            # Check if we already have media from the feed data (CollectedPostcard has media)
+            # Check if we already have media from the feed data
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
 
-            if has_medias:
-                LOGGER.debug("Item %s already has %d medias from feed",
-                              item_id, len(item_data.get("medias", [])))
+            # For items without media, fetch from our custom query
+            # This works for both NewPostcard and CollectedPostcard
+            if not has_medias and item_id in postcard_media_map:
+                postcard_data = postcard_media_map[item_id]
+                if postcard_data.get("medias"):
+                    item_data["medias"] = postcard_data["medias"]
+                    has_medias = True
+                    LOGGER.info("Got %d medias from custom query for %s",
+                               len(postcard_data["medias"]), item_id)
 
-            # For NewPostcard items without media, fetch from our custom query
-            if item_type == "FeedItemNewPostcard" and not has_medias:
-                if item_id in postcard_media_map:
-                    postcard_data = postcard_media_map[item_id]
-                    if postcard_data.get("medias"):
-                        item_data["medias"] = postcard_data["medias"]
-                        LOGGER.debug("Got %d medias from custom query", len(postcard_data["medias"]))
+            if not has_medias:
+                LOGGER.warning("No medias found for %s (in media_map: %s)",
+                              item_id, item_id in postcard_media_map)
 
                 # If custom query didn't get media and it's truly new, try sighting API
                 if not item_data.get("medias") and item_id in new_postcard_ids:
