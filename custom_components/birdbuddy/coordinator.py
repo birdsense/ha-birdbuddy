@@ -245,6 +245,9 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             needs_custom_query = not has_medias or (has_medias and not existing_medias[0].get("contentUrl"))
             if needs_custom_query and item_id in postcard_media_map:
                 postcard_data = postcard_media_map[item_id]
+                LOGGER.warning("POSTCARD_DATA for %s: keys=%s, medias=%s",
+                              item_id, list(postcard_data.keys()),
+                              len(postcard_data.get("medias", [])) if postcard_data.get("medias") else "None")
                 if postcard_data.get("medias"):
                     item_data["medias"] = postcard_data["medias"]
                     has_medias = True
