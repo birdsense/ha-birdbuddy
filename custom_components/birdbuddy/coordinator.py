@@ -161,11 +161,12 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
 
             # Debug: log what's in the medias
             if medias:
-                LOGGER.warning("MEDIA_KEYS for %s: %s", item_id, list(medias[0].keys()))
-                LOGGER.warning("FIRST_MEDIA for %s: %s", item_id, medias[0])
+                LOGGER.warning("LAST_MEDIA for %s: contentUrl=%s", item_id,
+                              medias[-1].get("contentUrl", "KEY_MISSING")[:80] if medias[-1].get("contentUrl") else "VALUE_IS_NONE")
 
             best_media = medias[-1] if medias else None
             media_url = best_media.get("contentUrl") if best_media else None
+            LOGGER.warning("EXTRACTED for %s: media_url=%s", item_id, media_url[:50] if media_url else "None")
             thumbnail_url = best_media.get("thumbnailUrl") if best_media else None
 
             all_media_urls = [m.get("contentUrl") for m in medias if m.get("contentUrl")]
