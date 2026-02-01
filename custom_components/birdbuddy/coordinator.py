@@ -192,15 +192,16 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             return
 
         new_postcard_ids = new_postcard_ids or set()
-        LOGGER.debug("_process_feed: Processing %d feed items, %d are truly new postcards",
-                      len(feed), len(new_postcard_ids))
+        LOGGER.warning("PROCESS_FEED: %d feed items, %d truly new postcards",
+                       len(feed), len(new_postcard_ids))
 
         # Fetch media data using our custom query (pybirdbuddy misses this)
         postcard_media_map = await self._fetch_feed_with_postcard_media()
 
         # Get previously processed item IDs
         processed_ids = self._get_processed_item_ids()
-        LOGGER.debug("_process_feed: Already processed %d items", len(processed_ids))
+        LOGGER.warning("PROCESS_FEED: %d already processed, media_map has %d",
+                       len(processed_ids), len(postcard_media_map))
         new_ids = set()
 
         for item in feed:
@@ -226,7 +227,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
             if item_id in processed_ids:
                 continue
 
-            LOGGER.info("NEW feed item: %s (type: %s)", item_id, item_type)
+            LOGGER.warning("PROCESS_FEED: NEW item %s (type: %s), in_media_map: %s",
+                          item_id, item_type, item_id in postcard_media_map)
 
             # Check if we already have media from the feed data
             has_medias = item_data.get("medias") and len(item_data.get("medias", [])) > 0
@@ -238,8 +240,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 if postcard_data.get("medias"):
                     item_data["medias"] = postcard_data["medias"]
                     has_medias = True
-                    LOGGER.info("Got %d medias from custom query for %s",
-                               len(postcard_data["medias"]), item_id)
+                    LOGGER.warning("PROCESS_FEED: Got %d medias from custom query for %s",
+                                   len(postcard_data["medias"]), item_id)
 
             if not has_medias:
                 LOGGER.warning("No medias found for %s (in media_map: %s)",
@@ -303,8 +305,8 @@ class BirdBuddyDataUpdateCoordinator(DataUpdateCoordinator[BirdBuddy]):
                 "all_thumbnail_urls": all_thumbnail_urls,
             }
 
-            LOGGER.info("FIRING EVENT for %s - type: %s, has_media: %s, media_count: %d",
-                          item_id, item_type, media_count > 0, media_count)
+            LOGGER.warning("FIRING_EVENT: %s, media_url=%s, count=%d",
+                          item_id, media_url[:50] if media_url else "None", media_count)
 
             self.hass.bus.fire(
                 event_type=EVENT_NEW_FEED_ITEM,
